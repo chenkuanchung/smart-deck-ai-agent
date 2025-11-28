@@ -12,59 +12,61 @@ llm = ChatGoogleGenerativeAI(
 )
 
 def writer_node(state: AgentState):
-    """
-    [Writer] 內容寫手
-    """
     print("--- [Writer] 正在撰寫內容並生成 PPT ---")
     
     outline = state.outline
-    
-    # [關鍵修正] 防呆檢查：如果沒有大綱，直接結束，不要報錯
     if not outline or not outline.slides:
-        print("⚠️ 錯誤：Writer 收到了空的大綱，停止生成。")
+        print("⚠️ 錯誤：Writer 收到了空的大綱")
         return {"final_file_path": None}
 
     final_slides_data = [] 
     
     for i, slide in enumerate(outline.slides):
-        print(f"  -> 處理第 {i+1} 頁: {slide.title} ({slide.layout})")
+        print(f"  -> 處理第 {i+1} 頁: {slide.title}")
         
+        # 針對內文頁進行擴寫
         if slide.layout in ["content", "two_column", "comparison"]:
             prompt = f"""
-            你是一位專業的簡報撰寫員。請根據以下指引，撰寫這一頁的詳細內容。
+            你是一位專業簡報撰寫員。請根據以下資訊撰寫本頁內容。
             
             標題：{slide.title}
             版型：{slide.layout}
             原始指引：{slide.content}
             目標受眾：{outline.target_audience}
             
-            【要求】：
-            1. 語言：繁體中文。
-            2. 風格：專業、精煉、條列式。
-            3. 格式：
-               - 'content': 一段完整的條列式文字。
-               - 'two_column': 兩段文字，中間用 '|||' 分隔。
+            【嚴格規範】：
+            1. **禁止 Markdown**：絕對不要使用 '**' (粗體)、'#' (標題) 或 '[]' 符號。請輸出純文字。
+            2. **內容長度**：
+               - 請列出 3~5 個重點 (Bullet points)。
+               - 每個重點控制在 10-20 字之間，不要過於簡略，也不要長篇大論。
+               - 語氣要專業、精煉、有說服力。
+            3. **格式要求**：
+               - 若是 'two_column'：請輸出兩段內容，中間用 '|||' 分隔 (例如：左邊優點... ||| 右邊缺點...)。
+               - 若是 'content'：請直接輸出條列式內容，每點一行。
             
-            請直接輸出內容。
+            請直接輸出內容，不要有任何開場白。
             """
             try:
                 response = llm.invoke([HumanMessage(content=prompt)])
                 generated_text = response.content
             except Exception:
-                generated_text = str(slide.content) # 失敗時用原始指引
+                generated_text = str(slide.content)
             
+            # 處理雙欄
             if slide.layout in ["two_column", "comparison"] and "|||" in generated_text:
                 parts = generated_text.split("|||")
                 final_content = [p.strip() for p in parts[:2]]
             else:
                 final_content = generated_text
         else:
-            final_content = slide.content[0] if slide.content else ""
+            # 封面或章節頁，保留原樣 (通常是標題或短語)
+            final_content = slide.content
 
         slide_data = {
             "layout": slide.layout,
             "title": slide.title,
-            "content": final_content
+            "content": final_content,
+            "notes": slide.notes # 把 notes 也傳給 builder
         }
         final_slides_data.append(slide_data)
         

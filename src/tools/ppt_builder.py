@@ -1,80 +1,80 @@
 # src/tools/ppt_builder.py
 from pptx import Presentation
 import os
+import re
 
-# --- 標準版型地圖 (Standard Layout Config) ---
-# 根據你提供的結構分析，這些 Index 都是最標準的配置
+# --- 標準版型地圖 ---
 LAYOUT_CONFIG = {
-    "title": {
-        "id": 0,           # 標題投影片
-        "title_idx": 0,
-        "body_idx": 1      # 副標題
-    },
-    "content": {
-        "id": 1,           # 標題及內容 (標準內文頁)
-        "title_idx": 0,
-        "body_idx": 1      # 內文框
-    },
-    "section": {
-        "id": 2,           # 章節標題
-        "title_idx": 0,
-        "body_idx": 1      # 章節描述
-    },
-    "two_column": {
-        "id": 3,           # 兩個內容 (左右雙欄)
-        "title_idx": 0,
-        "left_idx": 1,     # 左欄
-        "right_idx": 2     # 右欄
-    },
-    "comparison": {
-        "id": 4,           # 比較 (有小標題)
-        "title_idx": 0,
-        "left_idx": 2,     # 左內文 (注意: 1是左標題)
-        "right_idx": 4     # 右內文 (注意: 3是右標題)
-        # 暫時先用 ID 3 的 two_column 處理比較比較簡單，這裡僅作紀錄
-    }
+    "title": {"id": 0, "title_idx": 0, "body_idx": 1},
+    "content": {"id": 1, "title_idx": 0, "body_idx": 1},
+    "section": {"id": 2, "title_idx": 0, "body_idx": 1},
+    "two_column": {"id": 3, "title_idx": 0, "left_idx": 1, "right_idx": 2},
+    "comparison": {"id": 4, "title_idx": 0, "left_idx": 2, "right_idx": 4}
 }
+
+def clean_text(text):
+    """
+    清除 Markdown 符號與不必要的格式
+    1. 移除 **粗體** 符號
+    2. 移除列表符號 (如 - 或 *)，因為 PPT 會自己加 Bullet
+    3. 移除多餘空白
+    """
+    if not isinstance(text, str):
+        return str(text)
+    
+    # 移除 Markdown 粗體 (**text**)
+    text = text.replace("**", "")
+    text = text.replace("__", "")
+    
+    # 移除開頭的 - 或 * (如果 PPT 版型本身就有 bullet points)
+    # text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)
+    
+    return text.strip()
+
+def format_content(content_data):
+    """
+    將內容資料轉為適合 PPT 顯示的純文字字串
+    """
+    if isinstance(content_data, list):
+        # 如果是列表，用換行符號接起來，變成多行文字
+        # 並且對每一行做清理
+        cleaned_list = [clean_text(item) for item in content_data]
+        return "\n".join(cleaned_list)
+    else:
+        # 如果已經是字串，直接清理
+        return clean_text(str(content_data))
 
 def create_presentation(title: str, slides_content: list, template_path="template.pptx", filename="output.pptx"):
     """
-    建立 PPT 檔案的工具函式 (標準版型適配版)
+    建立 PPT 檔案 (包含 Markdown 清除與 List 格式化功能)
     """
     
-    # 1. 載入 Template
     if os.path.exists(template_path):
         prs = Presentation(template_path)
     else:
-        # 如果真的沒模板，用內建的通常也是這個順序
         prs = Presentation() 
-        print("⚠️ 警告: 找不到 template.pptx，使用預設白底樣式。")
+        print("⚠️ 警告: 找不到 template.pptx")
 
-    # 2. 建立內容頁
     for i, page in enumerate(slides_content):
-        # 取得版型設定
         layout_name = page.get('layout', 'content')
-        
-        # 為了保險，如果 Manager 指定了 comparison，我們暫時先導向 two_column (ID 3)
-        # 因為 ID 4 需要填寫 4 個框框 (左右標題+左右內文)，邏輯較複雜，MVP 先用 ID 3
         if layout_name == 'comparison':
-            config = LAYOUT_CONFIG['two_column']
+            config = LAYOUT_CONFIG['two_column'] # 暫時用雙欄替代
         else:
             config = LAYOUT_CONFIG.get(layout_name, LAYOUT_CONFIG['content'])
         
-        # 建立頁面
         try:
             slide = prs.slides.add_slide(prs.slide_layouts[config['id']])
         except IndexError:
-            # 防呆：如果模板又換了，ID 超出範圍，回退到 ID 1
             slide = prs.slides.add_slide(prs.slide_layouts[1])
-            config = LAYOUT_CONFIG['content'] # 強制切換設定以免後面填錯
+            config = LAYOUT_CONFIG['content']
         
         # --- A. 填寫標題 ---
         title_idx = config.get('title_idx', 0)
         try:
             if slide.placeholders[title_idx].has_text_frame:
-                slide.placeholders[title_idx].text = page.get('title', '')
+                # 標題也要清乾淨
+                slide.placeholders[title_idx].text = clean_text(page.get('title', ''))
         except Exception:
-            # 如果連標題框都找不到 (例如空白頁)，就跳過
             pass
 
         # --- B. 填寫內文 ---
@@ -82,43 +82,51 @@ def create_presentation(title: str, slides_content: list, template_path="templat
         if not content_data:
             continue
 
-        # 雙欄邏輯 (針對 ID 3)
+        # 雙欄邏輯
         if layout_name == 'two_column' or layout_name == 'comparison':
             if isinstance(content_data, list) and len(content_data) >= 2:
-                # 填左欄
+                # 左欄
                 try:
                     left_ph = slide.placeholders[config['left_idx']]
-                    left_ph.text = str(content_data[0])
+                    left_ph.text = format_content(content_data[0])
                 except KeyError: pass
                 
-                # 填右欄
+                # 右欄
                 try:
                     right_ph = slide.placeholders[config['right_idx']]
-                    right_ph.text = str(content_data[1])
+                    right_ph.text = format_content(content_data[1])
                 except KeyError: pass
             else:
-                # 如果資料不是 list，硬塞左欄
+                # 格式不對，硬塞左欄
                 try:
-                    slide.placeholders[config['left_idx']].text = str(content_data)
+                    slide.placeholders[config['left_idx']].text = format_content(content_data)
                 except KeyError: pass
         
-        # 單欄邏輯 (包含封面、章節、內文)
+        # 單欄邏輯
         else:
             try:
                 body_idx = config.get('body_idx')
                 if body_idx is not None:
                     ph = slide.placeholders[body_idx]
                     
-                    # 嘗試用 TextFrame 填寫以支援自動換行
+                    # [關鍵] 使用 format_content 處理 list 轉字串
+                    final_text = format_content(content_data)
+                    
                     if ph.has_text_frame:
-                        ph.text_frame.text = str(content_data)
+                        ph.text_frame.text = final_text
                         ph.text_frame.word_wrap = True
                     else:
-                        ph.text = str(content_data)
+                        ph.text = final_text
             except KeyError:
-                print(f"ℹ️ 第 {i+1} 頁 (Layout {config['id']}) 找不到 Index {body_idx} 的框，已跳過。")
+                pass
 
-    # 3. 儲存
+        # --- C. 填寫備忘稿 (Notes) ---
+        # 如果有 notes 欄位，填入備忘稿區
+        notes_text = page.get('notes', '')
+        if notes_text and slide.has_notes_slide:
+            text_frame = slide.notes_slide.notes_text_frame
+            text_frame.text = format_content(notes_text)
+
     output_path = os.path.join(os.getcwd(), filename)
     prs.save(output_path)
     return output_path
