@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  smart-deck-app:
+    build: .
+    container_name: smart-deck-agent
+    ports:
+      - "8501:8501"  # 映射 Streamlit Port
+    volumes:
+      - ./src:/app/src           # 掛載程式碼目錄，讓你改 code 不用重啟 Container (Hot reload)
+      - ./.env:/app/.env         # 掛載環境變數
+      - ./chroma_db:/app/chroma_db # 持久化儲存向量資料
+    environment:
+      - PYTHONUNBUFFERED=1       # 讓 Log 即時顯示

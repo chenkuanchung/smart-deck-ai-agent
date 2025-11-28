@@ -1,0 +1,21 @@
+# Core Logic
+langchain==0.3.7
+langchain-google-genai==2.0.4  
+langchain-google-community==2.0.3
+langgraph==0.2.53              
+pydantic==2.9.2                
+
+# Tools & Workers
+langchain-community==0.3.7
+google-api-python-client==2.153.0 
+python-pptx==1.0.2                
+chromadb==0.5.18                  
+langchain-chroma==0.1.4           
+pypdf==5.1.0                      
+
+# UI
+streamlit==1.40.1
+
+# Utilities
+python-dotenv==1.0.1
+watchdog==6.0.0                   
