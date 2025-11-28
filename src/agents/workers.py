@@ -24,7 +24,6 @@ def writer_node(state: AgentState):
     for i, slide in enumerate(outline.slides):
         print(f"  -> 處理第 {i+1} 頁: {slide.title}")
         
-        # 針對內文頁進行擴寫
         if slide.layout in ["content", "two_column", "comparison"]:
             prompt = f"""
             你是一位專業簡報撰寫員。請根據以下資訊撰寫本頁內容。
@@ -35,16 +34,30 @@ def writer_node(state: AgentState):
             目標受眾：{outline.target_audience}
             
             【嚴格規範】：
-            1. **禁止 Markdown**：絕對不要使用 '**' (粗體)、'#' (標題) 或 '[]' 符號。請輸出純文字。
-            2. **內容長度**：
-               - 請列出 3~5 個重點 (Bullet points)。
-               - 每個重點控制在 10-20 字之間，不要過於簡略，也不要長篇大論。
-               - 語氣要專業、精煉、有說服力。
-            3. **格式要求**：
-               - 若是 'two_column'：請輸出兩段內容，中間用 '|||' 分隔 (例如：左邊優點... ||| 右邊缺點...)。
-               - 若是 'content'：請直接輸出條列式內容，每點一行。
+            1. **禁止 Markdown**：絕對不要使用 '**'、'#' 或 '- ' 符號。
+            2. **內容長度**：每點 20-40 字。
+            3. **格式要求**：直接輸出純文字，每點換行。
+
+            ### 輸出範例 (Example)：
             
-            請直接輸出內容，不要有任何開場白。
+            [錯誤寫法] (不要這樣寫):
+            **市場優勢：**
+            - 我們擁有獨家技術
+            - *成本更低*
+
+            [正確寫法] (請這樣寫):
+            我們擁有業界領先的獨家專利技術
+            透過製程優化成功降低了 30% 生產成本
+            建立了全台最大的銷售通路網絡
+
+            若是 'two_column' 版型，請用 '|||' 分隔兩段：
+            左邊的第一個論點
+            左邊的第二個論點
+            |||
+            右邊的第一個論點
+            右邊的第二個論點
+            
+            請直接輸出內容：
             """
             try:
                 response = llm.invoke([HumanMessage(content=prompt)])
@@ -59,14 +72,13 @@ def writer_node(state: AgentState):
             else:
                 final_content = generated_text
         else:
-            # 封面或章節頁，保留原樣 (通常是標題或短語)
             final_content = slide.content
 
         slide_data = {
             "layout": slide.layout,
             "title": slide.title,
             "content": final_content,
-            "notes": slide.notes # 把 notes 也傳給 builder
+            "notes": slide.notes
         }
         final_slides_data.append(slide_data)
         

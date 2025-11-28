@@ -21,23 +21,45 @@ def manager_node(state: AgentState):
     system_prompt = """你是一位專業的簡報架構師。你的任務是根據「使用者與 AI 的對話紀錄」，規劃一份 PowerPoint 的結構。
 
     ### 你的核心目標：
-    分析對話紀錄中的資訊，將其轉化為一份邏輯清晰的簡報大綱。
+    分析對話紀錄中的資訊，將其轉化為一份邏輯清晰的簡報大綱 JSON。
 
     ### 處理策略 (Strategy)：
-    1. **情況 A：對話中已有明確大綱**
-       - 若 AI 在對話中已經列出了「投影片 1... 投影片 2...」，請**優先並忠實地**採用該結構，不要隨意更改使用者的意圖。
-    
-    2. **情況 B：對話中僅有內容討論 (或是文件總結)**
-       - 若對話只是針對內容的探討，請發揮你的專業能力，將這些資訊**歸納、整理**，並重新規劃成一份 5-10 頁的簡報結構。
-       - 確保邏輯連貫（起承轉合）。
+    1. **情況 A：對話中已有明確大綱** -> 忠實還原。
+    2. **情況 B：對話中僅有內容討論** -> 歸納整理並重新規劃 (5-10 頁)。
 
-    ### 欄位填寫規則 (Field Instructions)：
-    1. **layout**: 請判斷版型 ('title', 'section', 'content', 'two_column')。
-    2. **title**: 填寫投影片標題。
-    3. **content**: 填寫投影片內文重點 (List[str])。
-    4. **notes**: 請為每一頁撰寫「演講者備忘稿」。若對話中未提及，請根據標題與內文**自動生成**適合的講稿提示（例如：「本頁重點在於說明...」）。
+    ### 欄位填寫規則：
+    1. **layout**: 必須是 'title', 'section', 'content', 'two_column' 其中之一。
+    2. **notes**: **(重要)** 必須為每一頁撰寫演講者備忘稿。
+
+    ### 輸出範例 (Output Example)：
+    ```json
+    {
+      "topic": "專案進度報告",
+      "target_audience": "部門主管",
+      "slides": [
+        {
+          "layout": "title",
+          "title": "Q3 專案進度匯報",
+          "content": ["報告人：王小明"],
+          "notes": "各位主管好，今天要跟各位報告 Q3 的執行狀況。"
+        },
+        {
+          "layout": "content",
+          "title": "核心成效數據",
+          "content": ["營收成長 20%", "用戶數突破 100 萬"],
+          "notes": "首先看到數據面，我們達成了雙位數成長。"
+        },
+        {
+          "layout": "two_column",
+          "title": "A/B 方案比較",
+          "content": ["方案 A：成本低但耗時", "方案 B：成本高但快速"],
+          "notes": "左邊是保守方案，右邊是激進方案，我們建議採用 B。"
+        }
+      ]
+    }
+    ```
     
-    請確保輸出的 JSON 格式絕對正確，不要遺漏任何一頁。
+    請確保輸出的 JSON 格式與上述範例結構一致。
     """
 
     structured_llm = llm.with_structured_output(PresentationOutline)
@@ -48,7 +70,7 @@ def manager_node(state: AgentState):
     【完整對話紀錄】：
     {state.chat_history}
     
-    請根據上述紀錄，生成最終的簡報結構 JSON。
+    請產出簡報大綱 JSON。
     """
     
     # 呼叫模型
@@ -68,8 +90,7 @@ def manager_node(state: AgentState):
             topic="自動生成失敗",
             target_audience="使用者",
             slides=[
-                Slide(layout="title", title="生成失敗提示", content=["AI 無法將對話轉為結構化資料", "請查看終端機 (Terminal) 的錯誤訊息"], notes="請檢查程式日誌"),
-                Slide(layout="content", title="可能原因", content=["1. 對話紀錄過長", "2. 模型輸出格式錯誤", "3. 請嘗試更換為 Gemini Pro 模型"], notes="請嘗試縮短對話或重試")
+                Slide(layout="title", title="生成失敗提示", content=["AI 無法將對話轉為結構化資料", "請查看終端機錯誤"], notes="請檢查程式日誌")
             ]
         )
     

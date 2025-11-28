@@ -12,7 +12,6 @@ if project_root not in sys.path:
 
 # Import
 from src.config import Config
-# [新增 import] remove_file_from_db
 from src.tools.rag import ingest_file, rag_tool, reset_vector_store, remove_file_from_db
 from src.tools.search import search_tool
 from src.graph import agent_workflow
@@ -20,12 +19,29 @@ from src.agents.state import AgentState
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
-# System Prompt
+# --- [關鍵修正] 強化版 System Prompt ---
 SYSTEM_PROMPT = """
-你是一個智慧型文件分析與簡報助手 (Smart Deck Agent)。
-1. **文件優先**：使用者問總結或內容時，優先查 `read_knowledge_base`。
-2. **工具策略**：需要外部資訊才查 `Google Search`。
-3. **禁止反問**：不要問使用者檔名，直接搜尋關鍵字。
+你是一個智慧型文件分析與簡報助手 (Smart Deck Agent)。你的核心任務是協助使用者理解他們上傳的文件 (PDF/TXT)，並根據這些內容生成洞察。
+
+### 核心思考準則 (Core Instructions)：
+
+1.  **文件優先 (Document First)**：
+    -   使用者的問題通常與上傳的文件有關。
+    -   **必須**使用 `read_knowledge_base` 工具來尋找答案。
+
+2.  **關鍵字轉譯 (Query Generation)**：
+    -   當呼叫工具時，**絕對不可以**讓 query 參數為空。
+    -   你必須將使用者的模糊指令，轉譯為精確的搜尋關鍵字。
+    -   **範例**：
+        -   使用者說：「幫我總結」 -> 工具 query 填：「文件重點摘要 結論」
+        -   使用者說：「裡面在講什麼？」 -> 工具 query 填：「核心議題 主要內容」
+        -   使用者說：「有提到 AI 嗎？」 -> 工具 query 填：「AI 人工智慧」
+
+3.  **禁止反問**：
+    -   不要問使用者「你要查哪個檔案？」，直接搜尋關鍵字即可。
+
+4.  **外部搜尋策略**：
+    -   只有在使用者明確要求「上網查」、「搜尋最新新聞」時，才使用 `Google Search`。
 """
 
 # 1. Init
@@ -50,33 +66,23 @@ llm_with_tools = llm.bind_tools(tools)
 if "messages" not in st.session_state:
     st.session_state.messages = [SystemMessage(content=SYSTEM_PROMPT)]
 
-# 用來追蹤「目前資料庫裡有哪些檔案」
 if "db_files" not in st.session_state:
     st.session_state.db_files = set() 
 
-# 4. 側邊欄 (智慧同步區)
+# 4. 側邊欄
 with st.sidebar:
     st.header("📂 資料來源")
-    
-    # accept_multiple_files=True 讓我們可以一次管理多個檔案，也方便做刪除偵測
     uploaded_files = st.file_uploader(
         "選擇檔案 (PDF/TXT)", 
         type=["pdf", "txt"], 
         accept_multiple_files=True
     )
     
-    # --- [核心邏輯] 自動同步機制 ---
     if uploaded_files is not None:
-        # 1. 取得目前 UI 上的檔案名稱清單
         current_ui_filenames = {f.name for f in uploaded_files}
-        
-        # 2. 找出「新上傳」的 (UI 有，但 DB 沒記錄)
         new_files = [f for f in uploaded_files if f.name not in st.session_state.db_files]
-        
-        # 3. 找出「被刪除」的 (DB 有記錄，但 UI 沒有了)
         removed_files = st.session_state.db_files - current_ui_filenames
         
-        # 處理新檔案
         for file in new_files:
             with st.spinner(f"正在處理新檔案：{file.name}..."):
                 temp_path = os.path.join(os.getcwd(), file.name)
@@ -93,7 +99,6 @@ with st.sidebar:
                 else:
                     st.error(result)
 
-        # 處理被刪除的檔案
         for filename in removed_files:
             with st.spinner(f"正在移除檔案：{filename}..."):
                 msg = remove_file_from_db(filename)
@@ -105,7 +110,6 @@ with st.sidebar:
     
     st.divider()
     
-    # 清空按鈕
     if st.button("🗑️ Reset 全部", type="secondary"):
         reset_vector_store()
         st.session_state.db_files = set()
@@ -168,13 +172,24 @@ if prompt := st.chat_input("輸入訊息..."):
                         args = tool_call["args"]
                         call_id = tool_call["id"]
                         
+                        # [還原為標準邏輯] 不再依賴 fallback，完全相信 Prompt
+                        search_term = args.get("query")
+                        
                         if name == "read_knowledge_base":
-                            status_box.info(f"📚 查閱資料庫: {args.get('query')}")
+                            status_box.info(f"📚 查閱資料庫: {search_term}")
                         elif name == "google_search":
-                            status_box.info(f"🌐 搜尋網路: {args.get('query')}")
+                            status_box.info(f"🌐 搜尋網路: {search_term}")
                         
                         tool = tool_map.get(name)
-                        output = tool.invoke(next(iter(args.values())) if args else "") if tool else "Error"
+                        output = "Error: Tool not found"
+                        if tool:
+                            # 如果 Prompt 成功，這裡的 search_term 就不會是 None
+                            # 為了防止程式崩潰，我們只做最底層的空字串防護
+                            query_val = search_term if search_term else "總結" 
+                            try:
+                                output = tool.invoke(query_val)
+                            except Exception as e:
+                                output = f"Error: {e}"
                         
                         st.session_state.messages.append(
                             ToolMessage(content=str(output), tool_call_id=call_id, name=name)

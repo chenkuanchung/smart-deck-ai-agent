@@ -1,6 +1,7 @@
 # src/tools/ppt_builder.py
 from pptx import Presentation
 import os
+import ast
 import re
 
 # --- 標準版型地圖 ---
@@ -13,42 +14,61 @@ LAYOUT_CONFIG = {
 }
 
 def clean_text(text):
-    """
-    清除 Markdown 符號與不必要的格式
-    1. 移除 **粗體** 符號
-    2. 移除列表符號 (如 - 或 *)，因為 PPT 會自己加 Bullet
-    3. 移除多餘空白
-    """
+    """清除 Markdown 與多餘符號"""
     if not isinstance(text, str):
         return str(text)
     
-    # 移除 Markdown 粗體 (**text**)
-    text = text.replace("**", "")
-    text = text.replace("__", "")
-    
-    # 移除開頭的 - 或 * (如果 PPT 版型本身就有 bullet points)
-    # text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)
+    text = text.replace("**", "").replace("__", "")
+    text = text.strip("'").strip('"')
+    # 移除開頭的手動 bullet，因為我们要用母片的
+    text = re.sub(r'^[\-\*•]\s*', '', text)
     
     return text.strip()
 
-def format_content(content_data):
+def normalize_content(data):
+    """資料格式清洗"""
+    if isinstance(data, list):
+        return [clean_text(str(item)) for item in data]
+    
+    data_str = str(data).strip()
+    if (data_str.startswith("[") and data_str.endswith("]")):
+        try:
+            parsed_list = ast.literal_eval(data_str)
+            if isinstance(parsed_list, (list, tuple)):
+                return [clean_text(str(item)) for item in parsed_list]
+        except:
+            pass
+
+    if "|||" in data_str:
+        return [clean_text(part) for part in data_str.split("|||")]
+
+    if "\n" in data_str:
+        return [clean_text(line) for line in data_str.split("\n") if line.strip()]
+
+    return [clean_text(data_str)]
+
+def fill_text_frame(text_frame, content_list):
     """
-    將內容資料轉為適合 PPT 顯示的純文字字串
+    [純淨版] 只填入文字並設定層級，樣式完全由母片決定
     """
-    if isinstance(content_data, list):
-        # 如果是列表，用換行符號接起來，變成多行文字
-        # 並且對每一行做清理
-        cleaned_list = [clean_text(item) for item in content_data]
-        return "\n".join(cleaned_list)
-    else:
-        # 如果已經是字串，直接清理
-        return clean_text(str(content_data))
+    if not content_list:
+        return
+
+    text_frame.clear() 
+
+    for item in content_list:
+        if not item.strip():
+            continue
+        
+        p = text_frame.add_paragraph()
+        p.text = item
+        
+        # [關鍵] 設定層級為 0
+        # 這告訴 PPT: "請套用母片中『第一層』的項目符號樣式"
+        p.level = 0 
 
 def create_presentation(title: str, slides_content: list, template_path="template.pptx", filename="output.pptx"):
-    """
-    建立 PPT 檔案 (包含 Markdown 清除與 List 格式化功能)
-    """
-    
+    """建立 PPT 檔案"""
     if os.path.exists(template_path):
         prs = Presentation(template_path)
     else:
@@ -57,8 +77,9 @@ def create_presentation(title: str, slides_content: list, template_path="templat
 
     for i, page in enumerate(slides_content):
         layout_name = page.get('layout', 'content')
+        
         if layout_name == 'comparison':
-            config = LAYOUT_CONFIG['two_column'] # 暫時用雙欄替代
+            config = LAYOUT_CONFIG['two_column']
         else:
             config = LAYOUT_CONFIG.get(layout_name, LAYOUT_CONFIG['content'])
         
@@ -68,64 +89,41 @@ def create_presentation(title: str, slides_content: list, template_path="templat
             slide = prs.slides.add_slide(prs.slide_layouts[1])
             config = LAYOUT_CONFIG['content']
         
-        # --- A. 填寫標題 ---
+        # A. 標題
         title_idx = config.get('title_idx', 0)
         try:
             if slide.placeholders[title_idx].has_text_frame:
-                # 標題也要清乾淨
                 slide.placeholders[title_idx].text = clean_text(page.get('title', ''))
-        except Exception:
-            pass
+        except Exception: pass
 
-        # --- B. 填寫內文 ---
-        content_data = page.get('content', '')
-        if not content_data:
-            continue
+        # B. 內文
+        raw_content = page.get('content', '')
+        normalized_data = normalize_content(raw_content)
 
-        # 雙欄邏輯
-        if layout_name == 'two_column' or layout_name == 'comparison':
-            if isinstance(content_data, list) and len(content_data) >= 2:
-                # 左欄
-                try:
-                    left_ph = slide.placeholders[config['left_idx']]
-                    left_ph.text = format_content(content_data[0])
-                except KeyError: pass
-                
-                # 右欄
-                try:
-                    right_ph = slide.placeholders[config['right_idx']]
-                    right_ph.text = format_content(content_data[1])
-                except KeyError: pass
-            else:
-                # 格式不對，硬塞左欄
-                try:
-                    slide.placeholders[config['left_idx']].text = format_content(content_data)
-                except KeyError: pass
-        
-        # 單欄邏輯
+        if layout_name in ['two_column', 'comparison']:
+            try:
+                left_content = normalized_data[0] if len(normalized_data) > 0 else []
+                if isinstance(left_content, str): left_content = [left_content]
+                fill_text_frame(slide.placeholders[config['left_idx']].text_frame, left_content)
+            except (KeyError, IndexError): pass
+            
+            try:
+                right_content = normalized_data[1] if len(normalized_data) > 1 else []
+                if isinstance(right_content, str): right_content = [right_content]
+                fill_text_frame(slide.placeholders[config['right_idx']].text_frame, right_content)
+            except (KeyError, IndexError): pass
         else:
             try:
                 body_idx = config.get('body_idx')
                 if body_idx is not None:
-                    ph = slide.placeholders[body_idx]
-                    
-                    # [關鍵] 使用 format_content 處理 list 轉字串
-                    final_text = format_content(content_data)
-                    
-                    if ph.has_text_frame:
-                        ph.text_frame.text = final_text
-                        ph.text_frame.word_wrap = True
-                    else:
-                        ph.text = final_text
-            except KeyError:
-                pass
+                    main_content = normalized_data if isinstance(normalized_data, list) else [str(normalized_data)]
+                    fill_text_frame(slide.placeholders[body_idx].text_frame, main_content)
+            except KeyError: pass
 
-        # --- C. 填寫備忘稿 (Notes) ---
-        # 如果有 notes 欄位，填入備忘稿區
+        # C. 備忘稿
         notes_text = page.get('notes', '')
         if notes_text and slide.has_notes_slide:
-            text_frame = slide.notes_slide.notes_text_frame
-            text_frame.text = format_content(notes_text)
+            slide.notes_slide.notes_text_frame.text = clean_text(str(notes_text))
 
     output_path = os.path.join(os.getcwd(), filename)
     prs.save(output_path)
