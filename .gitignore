@@ -1,0 +1,49 @@
+# --- 1. 系統與環境 (絕對不能上傳) ---
+# Python 編譯檔
+__pycache__/
+*.pyc
+
+# 虛擬環境 (別人下載專案後應該自己建立)
+.venv/
+venv/
+env/
+
+# 環境變數與密鑰 (資安關鍵！絕對不能上傳)
+.env
+.env.*
+
+# --- 2. 資料庫與本地儲存 ---
+# ChromaDB 向量資料庫 (裡面存了你 PDF 的向量資料，檔案很大且含隱私)
+chroma_db/
+chroma_db_data/
+
+# --- 3. 使用者資料與生成結果 ---
+# 上傳的文件 (隱私資料)
+*.pdf
+*.docx
+*.doc
+
+# 排除 requirements.txt 以外的所有 txt (視需求而定，目前先不以此規則以免誤殺)
+# 若有特定測試文字檔，可單獨列出，例如：
+# temp_data.txt
+
+# 生成的 PPT 結果 (我們只保留 template，不保留生成的測試檔)
+*.pptx
+
+# [重要例外] template.pptx 是專案必需的母片，必須上傳！
+!template.pptx
+
+# --- 4. 本地測試與開發腳本 (依你的需求) ---
+# 你提到的測試檔
+test_*.py
+test_rag.py
+test_tools.py
+
+# 結構分析腳本 (如果你覺得這是開發工具，不用給別人看)
+inspect_*.py
+inspect_template.py
+inspect_full_structure.py
+
+# --- 5. 作業系統雜檔 ---
+.DS_Store
+Thumbs.db
