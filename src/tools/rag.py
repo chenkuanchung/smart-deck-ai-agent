@@ -6,17 +6,18 @@ from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.tools import Tool
 from src.config import Config
+import shutil
 
-# 設定向量資料庫路徑 (會在專案根目錄產生 chroma_db 資料夾)
+# 設定路徑
 PERSIST_DIRECTORY = os.path.join(os.getcwd(), "chroma_db")
 
-# 1. 初始化 Embedding 模型
+# 初始化 Embedding
 embeddings = GoogleGenerativeAIEmbeddings(
     model=Config.MODEL_EMBEDDING,
     google_api_key=Config.GOOGLE_API_KEY
 )
 
-# 2. 初始化 Vector Store
+# 初始化 Vector Store
 vector_store = Chroma(
     collection_name="smart_deck_docs",
     embedding_function=embeddings,
@@ -29,7 +30,6 @@ def ingest_file(file_path: str):
         return f"❌ 錯誤：找不到檔案 {file_path}"
     
     try:
-        # 判斷格式
         if file_path.lower().endswith('.pdf'):
             loader = PyPDFLoader(file_path)
         elif file_path.lower().endswith('.txt'):
@@ -38,27 +38,54 @@ def ingest_file(file_path: str):
             return "❌ 目前只支援 PDF 與 TXT"
 
         docs = loader.load()
-        
-        # 切割文字
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = text_splitter.split_documents(docs)
         
         if splits:
             vector_store.add_documents(documents=splits)
-            return f"✅ 成功：已將 {os.path.basename(file_path)} ({len(splits)} 片段) 存入知識庫。"
+            return f"✅ 成功：已將 {os.path.basename(file_path)} 存入知識庫。"
         else:
             return "⚠️ 檔案內容為空。"
             
     except Exception as e:
         return f"❌ 讀取失敗：{str(e)}"
 
-def query_knowledge_base(query: str):
-    """搜尋知識庫 (RAG 核心)"""
+# [新增功能] 根據檔名刪除資料
+def remove_file_from_db(filename: str):
+    """從向量資料庫中移除指定檔案的所有片段"""
     try:
-        # 找最相關的 4 個片段
+        # ChromaDB 存的時候會把 file_path 寫在 metadata 的 'source' 欄位
+        # 我們要還原出當初存的絕對路徑才能刪除
+        file_path = os.path.join(os.getcwd(), filename)
+        
+        # 使用 where 條件刪除
+        vector_store.delete(where={"source": file_path})
+        return f"🗑️ 已從知識庫移除：{filename}"
+    except Exception as e:
+        return f"❌ 移除失敗：{str(e)}"
+
+def reset_vector_store():
+    """清空整個知識庫"""
+    global vector_store
+    try:
+        try:
+            vector_store.delete_collection()
+        except:
+            pass
+        if os.path.exists(PERSIST_DIRECTORY):
+            shutil.rmtree(PERSIST_DIRECTORY)
+        vector_store = Chroma(
+            collection_name="smart_deck_docs",
+            embedding_function=embeddings,
+            persist_directory=PERSIST_DIRECTORY
+        )
+        return "✅ 知識庫已清空。"
+    except Exception as e:
+        return f"❌ 重置失敗: {str(e)}"
+
+def query_knowledge_base(query: str):
+    """搜尋"""
+    try:
         results = vector_store.similarity_search(query, k=4)
         if not results:
             return "知識庫中找不到相關資訊。"
@@ -66,9 +93,9 @@ def query_knowledge_base(query: str):
     except Exception as e:
         return f"搜尋失敗：{str(e)}"
 
-# 定義工具
+# Tool 定義
 rag_tool = Tool(
     name="read_knowledge_base",
-    description="讀取已上傳的文件。用於查詢內部資料、手冊或財報。",
+    description="讀取已上傳的文件。用於查詢內部資料。",
     func=query_knowledge_base
 )

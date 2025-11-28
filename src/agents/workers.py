@@ -5,7 +5,6 @@ from src.config import Config
 from src.agents.state import AgentState
 from src.tools.ppt_builder import create_presentation
 
-# 初始化 Gemini (使用聰明模型撰寫詳細內容)
 llm = ChatGoogleGenerativeAI(
     model=Config.MODEL_SMART, 
     google_api_key=Config.GOOGLE_API_KEY,
@@ -15,14 +14,18 @@ llm = ChatGoogleGenerativeAI(
 def writer_node(state: AgentState):
     """
     [Writer] 內容寫手
-    任務：根據大綱擴寫內容，並呼叫 PPT Builder 生成檔案
     """
     print("--- [Writer] 正在撰寫內容並生成 PPT ---")
     
     outline = state.outline
-    final_slides_data = [] # 準備給 PPT Builder 的資料
     
-    # 遍歷每一頁大綱
+    # [關鍵修正] 防呆檢查：如果沒有大綱，直接結束，不要報錯
+    if not outline or not outline.slides:
+        print("⚠️ 錯誤：Writer 收到了空的大綱，停止生成。")
+        return {"final_file_path": None}
+
+    final_slides_data = [] 
+    
     for i, slide in enumerate(outline.slides):
         print(f"  -> 處理第 {i+1} 頁: {slide.title} ({slide.layout})")
         
@@ -37,30 +40,27 @@ def writer_node(state: AgentState):
             
             【要求】：
             1. 語言：繁體中文。
-            2. 風格：專業、精煉、條列式 (Bullet points)。
+            2. 風格：專業、精煉、條列式。
             3. 格式：
-               - 如果是 'content' (單欄)：請輸出一段完整的條列式文字。
-               - 如果是 'two_column' (雙欄)：請輸出兩段文字，中間用 '|||' 分隔。例如：
-                 左邊的論點...
-                 |||
-                 右邊的論點...
+               - 'content': 一段完整的條列式文字。
+               - 'two_column': 兩段文字，中間用 '|||' 分隔。
             
-            請直接輸出內容，不要廢話。
+            請直接輸出內容。
             """
-            response = llm.invoke([HumanMessage(content=prompt)])
-            generated_text = response.content
+            try:
+                response = llm.invoke([HumanMessage(content=prompt)])
+                generated_text = response.content
+            except Exception:
+                generated_text = str(slide.content) # 失敗時用原始指引
             
-            # 處理雙欄分隔
             if slide.layout in ["two_column", "comparison"] and "|||" in generated_text:
                 parts = generated_text.split("|||")
-                final_content = [p.strip() for p in parts[:2]] # 取前兩段
+                final_content = [p.strip() for p in parts[:2]]
             else:
                 final_content = generated_text
         else:
-            # 封面或章節頁，直接使用 Manager 的規劃
             final_content = slide.content[0] if slide.content else ""
 
-        # 組裝資料
         slide_data = {
             "layout": slide.layout,
             "title": slide.title,
@@ -68,14 +68,17 @@ def writer_node(state: AgentState):
         }
         final_slides_data.append(slide_data)
         
-    # 呼叫工具生成檔案
     print("  -> 呼叫 PPT Builder...")
     output_filename = "final_presentation.pptx"
-    ppt_path = create_presentation(
-        title=outline.topic,
-        slides_content=final_slides_data,
-        template_path="template.pptx",
-        filename=output_filename
-    )
     
-    return {"final_file_path": ppt_path}
+    try:
+        ppt_path = create_presentation(
+            title=outline.topic,
+            slides_content=final_slides_data,
+            template_path="template.pptx",
+            filename=output_filename
+        )
+        return {"final_file_path": ppt_path}
+    except Exception as e:
+        print(f"❌ PPT 生成失敗: {e}")
+        return {"final_file_path": None}
