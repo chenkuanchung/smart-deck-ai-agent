@@ -16,6 +16,7 @@ env/
 # ChromaDB 向量資料庫 (裡面存了你 PDF 的向量資料，檔案很大且含隱私)
 chroma_db/
 chroma_db_data/
+uploads/
 
 # --- 3. 使用者資料與生成結果 ---
 # 上傳的文件 (隱私資料)
@@ -38,6 +39,7 @@ chroma_db_data/
 test_*.py
 test_rag.py
 test_tools.py
+test/
 
 # 結構分析腳本 (如果你覺得這是開發工具，不用給別人看)
 inspect_*.py
