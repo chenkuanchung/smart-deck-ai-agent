@@ -8,7 +8,7 @@ from src.tools.ppt_builder import create_presentation
 llm = ChatGoogleGenerativeAI(
     model=Config.MODEL_SMART, 
     google_api_key=Config.GOOGLE_API_KEY,
-    temperature=0.7
+    temperature=0.1
 )
 
 def writer_node(state: AgentState):

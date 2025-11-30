@@ -52,6 +52,18 @@ except Exception as e:
     st.error(f"環境設定錯誤: {e}")
     st.stop()
 
+# --- 初始化檢查邏輯 ---
+# 原理：當使用者 F5 刷新時，st.session_state 會被清空。
+# 我們利用這一點，檢測 "init" 標記是否存在。
+if "app_initialized" not in st.session_state:
+    # 1. 執行後端清理 (這會清空 ChromaDB 和 uploads 資料夾)
+    # 注意：這裡呼叫的是我們剛剛優化過的 reset_vector_store
+    print("🔄 偵測到新 Session 或頁面刷新，正在執行環境重置...")
+    reset_vector_store()
+    
+    # 2. 標記已初始化 (這樣當使用者按按鈕導致 Rerun 時，就不會再被重置)
+    st.session_state.app_initialized = True
+
 # 2. LLM
 tools = [rag_tool, search_tool]
 tool_map = {"read_knowledge_base": rag_tool, "google_search": search_tool}
@@ -85,7 +97,9 @@ with st.sidebar:
         
         for file in new_files:
             with st.spinner(f"正在處理新檔案：{file.name}..."):
-                temp_path = os.path.join(os.getcwd(), file.name)
+                # [修改] 使用 Config.UPLOAD_DIR 組合路徑
+                temp_path = os.path.join(Config.UPLOAD_DIR, file.name)
+                
                 with open(temp_path, "wb") as f:
                     f.write(file.getbuffer())
                 
