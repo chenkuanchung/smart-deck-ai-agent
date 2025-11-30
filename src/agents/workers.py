@@ -1,12 +1,14 @@
 # src/agents/workers.py
+import time
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from src.config import Config
 from src.agents.state import AgentState
 from src.tools.ppt_builder import create_presentation
 
+# 使用 Flash 模型 (速度快、Token多)
 llm = ChatGoogleGenerativeAI(
-    model=Config.MODEL_SMART, 
+    model=Config.MODEL_FAST, 
     google_api_key=Config.GOOGLE_API_KEY,
     temperature=0.1
 )
@@ -22,44 +24,55 @@ def writer_node(state: AgentState):
     final_slides_data = [] 
     
     for i, slide in enumerate(outline.slides):
-        print(f"  -> 處理第 {i+1} 頁: {slide.title}")
+        print(f"  -> 處理第 {i+1} 頁: {slide.title} ({slide.layout})")
         
+        # Rate Limit 保護
+        if i > 0:
+            time.sleep(1) 
+
         if slide.layout in ["content", "two_column", "comparison"]:
+            layout_instruction = ""
+            if slide.layout == "content":
+                layout_instruction = "版型：標準單欄。請保持條列式結構。"
+            elif slide.layout in ["two_column", "comparison"]:
+                layout_instruction = "版型：雙欄/比較。**必須**包含 '|||' 分隔符號。範例：左邊重點... ||| 右邊重點..."
+
+            # [關鍵修正] 忠實轉錄指令
             prompt = f"""
-            你是一位專業的「簡報內容編輯」。你的任務是將輸入的「原始指引」整理成適合放入 PPT 的乾淨文字。
+            你是一位專業的「簡報內容排版師」。
+            
+            【你的任務】：
+            將 Manager 提供的「原始指引」整理成 PPT 內文。
+            **「原始指引」中的資訊就是真理，請完整保留，不要刪減。**
             
             【輸入資訊】：
             標題：{slide.title}
-            版型：{slide.layout}
             原始指引：{slide.content}
             
-            【編輯準則 (Guidelines)】：
-            1. **忠實還原 (Faithfulness)**：
-               - 如果「原始指引」已經是完整的句子或重點，**請直接使用，不要改寫，不要擴寫，也不要縮寫**。
-               - 只有當「原始指引」太過簡略（例如只有關鍵字）時，才適度補充成通順的句子。
+            【排版指令】：
+            {layout_instruction}
             
-            2. **嚴格格式 (Formatting)**：
-               - **禁止 Markdown**：絕對不要出現 '**'、'#'、'- '、'['、']' 等符號。
-               - **層級結構**：
-                 - 第一層重點：直接書寫。
-                 - 第二層細節（縮排）：**請在開頭加上兩個空白** (  )。
-               - **換行**：每個重點請換行。
-
-            3. **版型處理**：
-               - 若是 'two_column'：請確保輸出包含 '|||' 分隔符號，將內容分為左右兩塊。如果原始指引沒有明顯分左右，請根據邏輯自行分配。
+            【編輯準則】：
+            1. **數據絕對完整**：如果指引中有「09:00」、「1.33倍」、「30天」等數據，**一個都不能少**。
+            2. **不做摘要**：請直接將指引轉化為條列式重點，不要試圖用一句話總結。
+            3. **格式清理**：移除 ** 或 # 等 Markdown 符號。
             
-            請輸出整理後的純文字內容：
+            請直接輸出最終內容文字：
             """
+            
             try:
                 response = llm.invoke([HumanMessage(content=prompt)])
-                generated_text = response.content
-            except Exception:
+                generated_text = response.content.strip()
+            except Exception as e:
+                print(f"    ⚠️ LLM 生成失敗: {e}")
                 generated_text = str(slide.content)
             
-            # 處理雙欄
-            if slide.layout in ["two_column", "comparison"] and "|||" in generated_text:
-                parts = generated_text.split("|||")
-                final_content = [p.strip() for p in parts[:2]]
+            if slide.layout in ["two_column", "comparison"]:
+                if "|||" in generated_text:
+                    parts = generated_text.split("|||")
+                    final_content = [p.strip() for p in parts[:2]]
+                else:
+                    final_content = [generated_text, ""]
             else:
                 final_content = generated_text
         else:

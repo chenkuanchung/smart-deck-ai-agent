@@ -16,9 +16,19 @@ def search_func(query: str):
     執行 Google 搜尋並回傳結果摘要。
     為了節省 Token，我們只回傳前 5 筆結果的 Snippet。
     """
+    # [關鍵修正] 防呆機制：處理空 Query
+    if not query or query.strip() == "" or query == "None":
+        return "⚠️ 搜尋失敗：未提供搜尋關鍵字。請分析使用者的對話內容，提取出具體的搜尋詞（例如：'2024 AI 趨勢'），然後再試一次。"
+
     try:
         # k=5 代表抓取前 5 筆
-        return search_wrapper.run(query)
+        results = search_wrapper.run(query)
+        
+        # [優化] 如果搜尋結果為空，也要回傳明確訊息
+        if not results:
+            return f"找不到關於 '{query}' 的相關資訊。"
+            
+        return results
     except Exception as e:
         return f"搜尋發生錯誤: {str(e)}"
 
@@ -26,6 +36,6 @@ def search_func(query: str):
 # 這樣之後的 Agent 才能夠「看到」並使用它
 search_tool = Tool(
     name="google_search",
-    description="用於搜尋網路上的最新資訊、新聞或技術文件。輸入應該是具體的搜尋關鍵字。",
+    description="用於搜尋網路上的最新資訊、新聞或技術文件。輸入必須是具體的搜尋關鍵字，不能為空。",
     func=search_func
 )
