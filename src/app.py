@@ -19,29 +19,18 @@ from src.agents.state import AgentState
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
-# --- [關鍵修正] 強化版 System Prompt ---
+# --- System Prompt (前端 Chat Agent 專用) ---
 SYSTEM_PROMPT = """
-你是一個智慧型文件分析與簡報助手 (Smart Deck Agent)。你的核心任務是協助使用者理解他們上傳的文件 (PDF/TXT)，並根據這些內容生成洞察。
+你是一個智慧型文件分析與簡報助手 (Smart Deck Agent)。
 
-### 核心思考準則 (Core Instructions)：
+### 你的角色分工：
+1. **你是「前端資訊蒐集員」**：負責回答使用者的問題，並蒐集必要的背景資訊。
+2. **簡報製作由後端 Manager 負責**：你不需要自己產生 PPT 代碼，只需確認使用者的需求。
 
-1.  **文件優先 (Document First)**：
-    -   使用者的問題通常與上傳的文件有關。
-    -   **必須**使用 `read_knowledge_base` 工具來尋找答案。
-
-2.  **關鍵字轉譯 (Query Generation)**：
-    -   當呼叫工具時，**絕對不可以**讓 query 參數為空。
-    -   你必須將使用者的模糊指令，轉譯為精確的搜尋關鍵字。
-    -   **範例**：
-        -   使用者說：「幫我總結」 -> 工具 query 填：「文件重點摘要 結論」
-        -   使用者說：「裡面在講什麼？」 -> 工具 query 填：「核心議題 主要內容」
-        -   使用者說：「有提到 AI 嗎？」 -> 工具 query 填：「AI 人工智慧」
-
-3.  **禁止反問**：
-    -   不要問使用者「你要查哪個檔案？」，直接搜尋關鍵字即可。
-
-4.  **外部搜尋策略**：
-    -   只有在使用者明確要求「上網查」、「搜尋最新新聞」時，才使用 `Google Search`。
+### 工具使用策略：
+1. **文件問題**：使用 `read_knowledge_base`。
+2. **外部資訊**：使用 `Google Search` 查詢最新新聞、數據或競品資訊。
+3. **關鍵字轉譯**：呼叫工具時，請將使用者口語轉為精確的搜尋關鍵字。
 """
 
 # 1. Init
@@ -52,21 +41,17 @@ except Exception as e:
     st.error(f"環境設定錯誤: {e}")
     st.stop()
 
-# --- 初始化檢查邏輯 ---
-# 原理：當使用者 F5 刷新時，st.session_state 會被清空。
-# 我們利用這一點，檢測 "init" 標記是否存在。
+# --- 初始化檢查邏輯 (Reset on Refresh) ---
 if "app_initialized" not in st.session_state:
-    # 1. 執行後端清理 (這會清空 ChromaDB 和 uploads 資料夾)
-    # 注意：這裡呼叫的是我們剛剛優化過的 reset_vector_store
     print("🔄 偵測到新 Session 或頁面刷新，正在執行環境重置...")
     reset_vector_store()
-    
-    # 2. 標記已初始化 (這樣當使用者按按鈕導致 Rerun 時，就不會再被重置)
     st.session_state.app_initialized = True
 
-# 2. LLM
+# 2. LLM (Chat Agent - 擁有所有工具)
+# 前端 Chat Agent 還是需要 RAG，這樣使用者問「PDF裡寫什麼？」它才答得出來
 tools = [rag_tool, search_tool]
 tool_map = {"read_knowledge_base": rag_tool, "google_search": search_tool}
+
 llm = ChatGoogleGenerativeAI(
     model=Config.MODEL_FAST,
     google_api_key=Config.GOOGLE_API_KEY,
@@ -81,13 +66,18 @@ if "messages" not in st.session_state:
 if "db_files" not in st.session_state:
     st.session_state.db_files = set() 
 
+if "file_uploader_key" not in st.session_state:
+    st.session_state.file_uploader_key = 0
+
 # 4. 側邊欄
 with st.sidebar:
     st.header("📂 資料來源")
+    
     uploaded_files = st.file_uploader(
         "選擇檔案 (PDF/TXT)", 
         type=["pdf", "txt"], 
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key=f"uploader_{st.session_state.file_uploader_key}"
     )
     
     if uploaded_files is not None:
@@ -97,9 +87,7 @@ with st.sidebar:
         
         for file in new_files:
             with st.spinner(f"正在處理新檔案：{file.name}..."):
-                # [修改] 使用 Config.UPLOAD_DIR 組合路徑
                 temp_path = os.path.join(Config.UPLOAD_DIR, file.name)
-                
                 with open(temp_path, "wb") as f:
                     f.write(file.getbuffer())
                 
@@ -128,34 +116,35 @@ with st.sidebar:
         reset_vector_store()
         st.session_state.db_files = set()
         st.session_state.messages = [SystemMessage(content=SYSTEM_PROMPT)]
+        st.session_state.file_uploader_key += 1
         st.rerun()
 
     st.header("🚀 生成行動")
     if st.button("✨ 生成 PPT 簡報", type="primary"):
-        if not st.session_state.messages:
-            st.warning("請先對話")
-        else:
-            with st.status("🤖 AI 團隊工作中...", expanded=True) as status:
-                chat_history = ""
-                for msg in st.session_state.messages:
-                    if isinstance(msg, HumanMessage):
-                        chat_history += f"User: {msg.content}\n"
-                    elif isinstance(msg, AIMessage) and msg.content:
-                        chat_history += f"AI: {msg.content}\n"
-                
-                status.write("🧠 Manager 規劃大綱...")
-                initial_state = {"user_request": "製作簡報", "chat_history": chat_history}
-                final_state = agent_workflow.invoke(initial_state)
-                
-                status.write("✍️ Writer 撰寫與排版...")
-                if final_state.get("final_file_path"):
-                    ppt_path = final_state["final_file_path"]
-                    file_name = os.path.basename(ppt_path)
-                    with open(ppt_path, "rb") as f:
-                        st.download_button("📥 下載 PPT", f, file_name)
-                    status.update(label="✅ 完成！", state="complete")
-                else:
-                    status.error("生成失敗")
+        with st.status("🤖 AI 團隊工作中...", expanded=True) as status:
+            chat_history = ""
+            # 收集 Chat Agent 辛苦搜尋來的資訊
+            for msg in st.session_state.messages:
+                if isinstance(msg, HumanMessage):
+                    chat_history += f"User: {msg.content}\n"
+                elif isinstance(msg, AIMessage) and msg.content:
+                    chat_history += f"AI: {msg.content}\n"
+            
+            status.write("🧠 Manager 正在分析文件並規劃架構...")
+            
+            # 直接呼叫 Graph，讓 Manager 自己去決定要不要讀檔
+            initial_state = {"user_request": "請製作一份簡報", "chat_history": chat_history}
+            final_state = agent_workflow.invoke(initial_state)
+            
+            status.write("✍️ Writer 撰寫與排版...")
+            if final_state.get("final_file_path"):
+                ppt_path = final_state["final_file_path"]
+                file_name = os.path.basename(ppt_path)
+                with open(ppt_path, "rb") as f:
+                    st.download_button("📥 下載 PPT", f, file_name)
+                status.update(label="✅ 完成！", state="complete")
+            else:
+                status.error("生成失敗")
 
 # 5. 主聊天區
 st.title("💬 Smart Deck Agent")
@@ -186,9 +175,7 @@ if prompt := st.chat_input("輸入訊息..."):
                         args = tool_call["args"]
                         call_id = tool_call["id"]
                         
-                        # [還原為標準邏輯] 不再依賴 fallback，完全相信 Prompt
                         search_term = args.get("query")
-                        
                         if name == "read_knowledge_base":
                             status_box.info(f"📚 查閱資料庫: {search_term}")
                         elif name == "google_search":
@@ -197,8 +184,6 @@ if prompt := st.chat_input("輸入訊息..."):
                         tool = tool_map.get(name)
                         output = "Error: Tool not found"
                         if tool:
-                            # 如果 Prompt 成功，這裡的 search_term 就不會是 None
-                            # 為了防止程式崩潰，我們只做最底層的空字串防護
                             query_val = search_term if search_term else "總結" 
                             try:
                                 output = tool.invoke(query_val)

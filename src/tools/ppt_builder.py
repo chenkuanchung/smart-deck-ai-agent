@@ -20,7 +20,7 @@ def clean_text(text):
     
     # 處理字面上的 \n
     text = text.replace('\\n', '\n')
-    # 移除 Markdown 粗體
+    # 移除 Markdown 粗體 (** 和 __)
     text = text.replace("**", "").replace("__", "")
     # 移除 List 字串殘留的引號
     text = text.strip("'").strip('"')
@@ -84,6 +84,9 @@ def fill_text_frame(text_frame, content_list):
         # 2. 清洗內容 (移除開頭的 - 或 * 或 •，只留純文字)
         clean_line = re.sub(r'^[\s\-\*•]+', '', line).strip()
         
+        # [關鍵修正] 在這裡再次呼叫 clean_text，確保 Markdown 粗體符號被拿掉
+        clean_line = clean_text(clean_line)
+        
         # 3. 填入段落
         p = text_frame.add_paragraph()
         p.text = clean_line # 只填純文字，不加符號
@@ -111,7 +114,7 @@ def create_presentation(title: str, slides_content: list, template_path="templat
             slide = prs.slides.add_slide(prs.slide_layouts[1])
             config = LAYOUT_CONFIG['content']
         
-        # A. 標題
+        # A. 標題 (這裡原本就有 clean_text)
         title_idx = config.get('title_idx', 0)
         try:
             if slide.placeholders[title_idx].has_text_frame:
