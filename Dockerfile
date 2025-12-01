@@ -1,5 +1,5 @@
-# 使用官方 Python 3.12 精簡版映像檔
-FROM python:3.12-slim
+# 使用官方 Python 3.10 精簡版映像檔
+FROM python:3.10-slim
 
 # 設定工作目錄
 WORKDIR /app
@@ -20,4 +20,5 @@ COPY . .
 EXPOSE 8501
 
 # 啟動指令 (使用 Streamlit 啟動 src/app.py)
+
 CMD ["streamlit", "run", "src/app.py", "--server.address=0.0.0.0"]
