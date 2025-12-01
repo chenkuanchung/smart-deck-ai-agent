@@ -5,7 +5,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # 安裝系統層級依賴 (chromadb 有時需要 C++ 編譯器，但 slim 通常夠用，保險起見裝一下 build-essential)
-RUN apt-get update && apt-get install -u \
+RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,4 +22,5 @@ EXPOSE 8501
 # 啟動指令 (使用 Streamlit 啟動 src/app.py)
 
 CMD ["streamlit", "run", "src/app.py", "--server.address=0.0.0.0"]
+
 
