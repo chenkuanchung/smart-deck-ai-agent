@@ -1,10 +1,10 @@
 # src/tools/ppt_builder.py
 from pptx import Presentation
+from pptx.util import Pt
+from pptx.dml.color import RGBColor
 import os
-import ast
-import re
 
-# --- 標準版型地圖 ---
+# 版型設定
 LAYOUT_CONFIG = {
     "title": {"id": 0, "title_idx": 0, "body_idx": 1},
     "content": {"id": 1, "title_idx": 0, "body_idx": 1},
@@ -13,152 +13,106 @@ LAYOUT_CONFIG = {
     "comparison": {"id": 4, "title_idx": 0, "left_idx": 2, "right_idx": 4}
 }
 
-def clean_text(text):
-    """基礎清洗：移除 Markdown、多餘符號與字面換行"""
-    if not isinstance(text, str):
-        return str(text)
-    
-    text = text.replace('\\n', '\n')
-    text = text.replace("**", "").replace("__", "")
-    text = text.strip("'").strip('"')
-    return text
-
-def normalize_content(data):
-    """將內容統一轉為 List[str]"""
-    if isinstance(data, list):
-        result = []
-        for item in data:
-            result.extend(normalize_content(item))
-        return result
-    
-    data_str = str(data).strip()
-    if (data_str.startswith("[") and data_str.endswith("]")):
+def set_font(paragraph, font_name="Microsoft JhengHei", size=None):
+    """通用字體設定，確保中文顯示正常"""
+    for run in paragraph.runs:
+        run.font.name = font_name
+        if size: run.font.size = size
+        # 針對東亞字體的額外設定 (雖然 python-pptx 支援度有限，但設 name 通常有效)
         try:
-            parsed_list = ast.literal_eval(data_str)
-            if isinstance(parsed_list, (list, tuple)):
-                return normalize_content(parsed_list)
-        except:
-            pass
+            run.font.element.rPr.ea.attrib['typeface'] = font_name
+        except: pass
 
-    if "|||" in data_str:
-        return normalize_content(data_str.split("|||"))
-
-    data_str = data_str.replace('\\n', '\n')
-    if "\n" in data_str:
-        return [line for line in data_str.split("\n") if line.strip()]
-
-    return [data_str]
-
-def fill_text_frame(text_frame, content_list):
-    """
-    [修正版] 解決首行空行問題，並自動偵測層級
-    """
-    if not content_list:
-        return
-
+def fill_text_frame(text_frame, content_items):
+    """將 ContentItem 列表填入 TextFrame"""
+    if not content_items: return
     text_frame.clear() 
 
-    valid_lines = [line for line in content_list if line.strip()]
-    
-    for i, line in enumerate(valid_lines):
-        # 1. 偵測縮排 (2個空白, tab, 或 "- " 開頭視為第二層)
-        leading_spaces = len(line) - len(line.lstrip())
-        level = 0
-        if leading_spaces >= 2 or line.startswith('\t') or line.strip().startswith('- '):
-            level = 1
-        
-        # 2. 清洗內容
-        clean_line = re.sub(r'^[\s\-\*•]+', '', line).strip()
-        clean_line = clean_text(clean_line)
-        
-        # 3. 填入段落
+    for i, item in enumerate(content_items):
+        # 取得屬性 (相容物件與字典)
+        if hasattr(item, 'text'):
+            text_val = item.text
+            level_val = item.level
+        elif isinstance(item, dict):
+            text_val = item.get('text', '')
+            level_val = item.get('level', 0)
+        else:
+            text_val = str(item)
+            level_val = 0
+
+        if not text_val.strip(): continue
+
         if i == 0:
             p = text_frame.paragraphs[0]
         else:
             p = text_frame.add_paragraph()
             
-        p.text = clean_line
-        p.level = level
+        p.text = text_val.strip()
+        p.level = min(max(0, level_val), 8) # 限制 0-8
+        
+        # 設定字體，避免亂碼
+        set_font(p, size=Pt(18 + (2 - min(level_val, 2))*4)) # Level越小字越大
 
-def create_presentation(title: str, slides_content: list, template_path="template.pptx", filename="output.pptx"):
-    """建立 PPT 檔案"""
+def create_presentation(title, slides_content, template_path="template.pptx", filename="output.pptx"):
     if os.path.exists(template_path):
         prs = Presentation(template_path)
     else:
-        prs = Presentation() 
-        print("⚠️ 警告: 找不到 template.pptx")
+        prs = Presentation() # 無範本時的 Fallback
+        print("⚠️ 警告: 找不到 template.pptx，使用預設白底範本。")
 
-    for i, page in enumerate(slides_content):
-        layout_name = page.get('layout', 'content')
+    for page in slides_content:
+        layout_key = page.get('layout', 'content')
         
-        if layout_name == 'comparison':
-            config = LAYOUT_CONFIG['two_column']
+        # 處理 Comparison 對應到 Two Column 邏輯
+        if layout_key == 'comparison':
+            config = LAYOUT_CONFIG['comparison']
+            # 注意：某些 Template 可能沒有 id=4，這裡做個簡單防呆
+            try:
+                slide_layout = prs.slide_layouts[config['id']]
+            except:
+                slide_layout = prs.slide_layouts[LAYOUT_CONFIG['two_column']['id']]
         else:
-            config = LAYOUT_CONFIG.get(layout_name, LAYOUT_CONFIG['content'])
-        
-        try:
-            slide = prs.slides.add_slide(prs.slide_layouts[config['id']])
-        except IndexError:
-            slide = prs.slides.add_slide(prs.slide_layouts[1])
-            config = LAYOUT_CONFIG['content']
+            config = LAYOUT_CONFIG.get(layout_key, LAYOUT_CONFIG['content'])
+            try:
+                slide_layout = prs.slide_layouts[config['id']]
+            except:
+                slide_layout = prs.slide_layouts[1] # Fallback to content
+
+        slide = prs.slides.add_slide(slide_layout)
         
         # A. 標題
-        title_idx = config.get('title_idx', 0)
         try:
-            if slide.placeholders[title_idx].has_text_frame:
-                slide.placeholders[title_idx].text = clean_text(page.get('title', '')).strip()
-        except Exception: pass
+            title_ph = slide.placeholders[config['title_idx']]
+            if title_ph.has_text_frame:
+                title_ph.text = page.get('title', '')
+                set_font(title_ph.text_frame.paragraphs[0], size=Pt(32))
+        except: pass
 
-        # B. 內文處理 (關鍵修正區域)
-        raw_content = page.get('content', '')
+        # B. 內容 (根據 column 分流)
+        raw_items = page.get('content', [])
+        if not isinstance(raw_items, list): raw_items = []
 
-        if layout_name in ['two_column', 'comparison']:
-            # [修正] 針對雙欄版型，必須先分離左右內容，再分別進行標準化 (Normalize)
-            # 這樣才不會把左邊的細節混到右邊，或是被無差別展平
-            
-            left_raw = ""
-            right_raw = ""
-            
-            # 情況 1: raw_content 是 List (Worker 產出的標準格式)
-            if isinstance(raw_content, list):
-                if len(raw_content) > 0: left_raw = raw_content[0]
-                if len(raw_content) > 1: right_raw = raw_content[1]
-            
-            # 情況 2: raw_content 是 String (可能包含 |||)
-            elif isinstance(raw_content, str):
-                if "|||" in raw_content:
-                    parts = raw_content.split("|||")
-                    left_raw = parts[0]
-                    if len(parts) > 1: right_raw = parts[1]
-                else:
-                    left_raw = raw_content
+        if layout_key in ['two_column', 'comparison']:
+            left_items = []
+            right_items = []
+            for item in raw_items:
+                # 判斷 column 屬性
+                c = getattr(item, 'column', 0) if not isinstance(item, dict) else item.get('column', 0)
+                if c == 1: right_items.append(item)
+                else: left_items.append(item)
 
-            # 分別處理左右欄的內容拆解 (Split lines)
-            left_lines = normalize_content(left_raw)
-            right_lines = normalize_content(right_raw)
-
-            try:
-                fill_text_frame(slide.placeholders[config['left_idx']].text_frame, left_lines)
-            except (KeyError, IndexError): pass
-            
-            try:
-                fill_text_frame(slide.placeholders[config['right_idx']].text_frame, right_lines)
-            except (KeyError, IndexError): pass
-            
+            try: fill_text_frame(slide.placeholders[config['left_idx']].text_frame, left_items)
+            except: pass
+            try: fill_text_frame(slide.placeholders[config['right_idx']].text_frame, right_items)
+            except: pass
         else:
-            # 單欄版型，直接展平即可
-            normalized_data = normalize_content(raw_content)
-            try:
-                body_idx = config.get('body_idx')
-                if body_idx is not None:
-                    fill_text_frame(slide.placeholders[body_idx].text_frame, normalized_data)
-            except KeyError: pass
+            # 單欄
+            try: fill_text_frame(slide.placeholders[config['body_idx']].text_frame, raw_items)
+            except: pass
 
-        # C. 備忘稿
-        notes_text = page.get('notes', '')
-        if notes_text and slide.has_notes_slide:
-            clean_notes = str(notes_text).replace('\\n', '\n').strip()
-            slide.notes_slide.notes_text_frame.text = clean_notes
+        # C. Notes
+        if page.get('notes') and slide.has_notes_slide:
+            slide.notes_slide.notes_text_frame.text = str(page.get('notes'))
 
     output_path = os.path.join(os.getcwd(), filename)
     prs.save(output_path)
