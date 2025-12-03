@@ -24,18 +24,18 @@ uploads/
 *.docx
 *.doc
 
-# 排除 requirements.txt 以外的所有 txt (視需求而定，目前先不以此規則以免誤殺)
+# 排除 requirements.txt 以外的所有 txt (視需求而定)
 # 若有特定測試文字檔，可單獨列出，例如：
-# temp_data.txt
+*.txt
+!requirements.txt
 
-# 生成的 PPT 結果 (我們只保留 template，不保留生成的測試檔)
+# 生成的 PPT 結果 (我們只保留 template，不保留生成的檔案)
 *.pptx
 
 # [重要例外] template.pptx 是專案必需的母片，必須上傳！
 !template.pptx
 
 # --- 4. 本地測試與開發腳本 (依你的需求) ---
-# 你提到的測試檔
 test_*.py
 test_rag.py
 test_tools.py
