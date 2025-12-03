@@ -1,6 +1,7 @@
 # src/tools/search.py
 from langchain_google_community import GoogleSearchAPIWrapper
 from langchain_core.tools import Tool
+from pydantic import BaseModel, Field
 from src.config import Config
 
 # 初始化 Google Search Wrapper
@@ -10,6 +11,10 @@ search_wrapper = GoogleSearchAPIWrapper(
     google_cse_id=Config.GOOGLE_CSE_ID,
     k=5
 )
+
+# 定義參數架構 (Schema)
+class SearchInput(BaseModel):
+    query: str = Field(description="The search query string. Cannot be empty.")
 
 def search_func(query: str):
     """
@@ -37,5 +42,6 @@ def search_func(query: str):
 search_tool = Tool(
     name="google_search",
     description="用於搜尋網路上的最新資訊、新聞或技術文件。輸入必須是具體的搜尋關鍵字，不能為空。",
-    func=search_func
+    func=search_func,
+    args_schema=SearchInput
 )

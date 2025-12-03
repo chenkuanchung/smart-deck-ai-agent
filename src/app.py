@@ -84,22 +84,52 @@ if "file_uploader_key" not in st.session_state: st.session_state.file_uploader_k
 # Sidebar
 with st.sidebar:
     st.header("📂 資料來源")
-    uploaded_files = st.file_uploader("上傳 PDF/TXT", type=["pdf", "txt"], accept_multiple_files=True, key=f"uploader_{st.session_state.file_uploader_key}")
+    uploaded_files = st.file_uploader(
+        "上傳 PDF/TXT", 
+        type=["pdf", "txt"], 
+        accept_multiple_files=True, 
+        key=f"uploader_{st.session_state.file_uploader_key}"
+    )
     
-    if uploaded_files:
-        current_filenames = {f.name for f in uploaded_files}
-        new_files = [f for f in uploaded_files if f.name not in st.session_state.db_files]
-        for file in new_files:
-            with st.spinner(f"處理中：{file.name}..."):
-                temp_path = os.path.join(Config.UPLOAD_DIR, file.name)
-                with open(temp_path, "wb") as f: f.write(file.getbuffer())
-                res = ingest_file(temp_path)
-                if "成功" in res:
-                    st.session_state.db_files.add(file.name)
-                    st.session_state.messages.append(HumanMessage(content=f"[系統] 已上傳 {file.name}"))
-                else: st.error(res)
+    # 1. 建立當前檔案清單
+    if uploaded_files is None:
+        uploaded_files = []
+    current_filenames = {f.name for f in uploaded_files}
+
+    # 2. 處理新增檔案 (New Files)
+    new_files = [f for f in uploaded_files if f.name not in st.session_state.db_files]
+    for file in new_files:
+        with st.spinner(f"處理中：{file.name}..."):
+            temp_path = os.path.join(Config.UPLOAD_DIR, file.name)
+            if not os.path.exists(Config.UPLOAD_DIR):
+                os.makedirs(Config.UPLOAD_DIR)
+                
+            with open(temp_path, "wb") as f: f.write(file.getbuffer())
+            
+            res = ingest_file(temp_path)
+            
+            if "✅" in res:
+                st.session_state.db_files.add(file.name)
+                st.session_state.messages.append(HumanMessage(content=f"[系統] {res}"))
+                # [關鍵修正] 在側邊欄顯示綠色成功訊息
+                st.success(res) 
+            else: 
+                st.error(res)
+
+    # 3. 處理移除檔案 (Removed Files)
+    removed_files = st.session_state.db_files - current_filenames
+    
+    if removed_files:
+        for filename in removed_files:
+            res = remove_file_from_db(filename)
+            st.session_state.db_files.remove(filename)
+            st.session_state.messages.append(HumanMessage(content=f"[系統] {res}"))
+            # 在側邊欄顯示刪除訊息
+            st.success(res) 
 
     st.divider()
+    
+    # Reset 按鈕
     if st.button("🗑️ Reset", type="secondary"):
         reset_vector_store()
         st.session_state.db_files = set()
@@ -162,9 +192,9 @@ if prompt := st.chat_input("輸入訊息 (例如：想了解的主題、上傳�
                         query_val = args.get("query", "")
                         
                         # [防呆] 若 LLM 給空參數，直接用使用者的 Prompt (即主題)
-                        if not query_val:
-                            query_val = prompt
-                            tool_call["args"]["query"] = prompt 
+                        # if not query_val:
+                        #     query_val = prompt
+                        #     tool_call["args"]["query"] = prompt 
                         
                         # [UI] 顯示親切名稱 + 查詢內容
                         display_name = TOOL_DISPLAY_NAMES.get(name, f"🔧 {name}")

@@ -7,6 +7,7 @@ from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.tools import Tool
 from src.config import Config
+from pydantic import BaseModel, Field
 
 # 設定路徑
 PERSIST_DIRECTORY = os.path.join(os.getcwd(), "chroma_db")
@@ -74,6 +75,10 @@ def reset_vector_store():
         return "✅ 重置完成"
     except Exception as e: return f"❌ 重置失敗: {e}"
 
+# 定義參數架構
+class RagInput(BaseModel):
+    query: str = Field(description="The query string to search in the knowledge base.")
+
 def query_knowledge_base(query: str):
     """
     查詢知識庫。
@@ -96,5 +101,6 @@ def query_knowledge_base(query: str):
 rag_tool = Tool(
     name="read_knowledge_base",
     description="讀取已上傳的文件。若無上傳文件，請勿使用此工具。",
-    func=query_knowledge_base
+    func=query_knowledge_base,
+    args_schema=RagInput
 )
