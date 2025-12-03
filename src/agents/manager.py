@@ -55,7 +55,7 @@ def manager_node(state: AgentState):
        
     2. **欄位控制 (Column)**：
        - `column=0`: 左欄 (預設)。
-       - `column=1`: 右欄 (僅用於 two_column/comparison 版型)。
+       - `column=1`: 右欄 (僅用於 two_column 版型)。
 
     3. **數據精確**：若有數據，必須填入，不可遺漏。
     4. **分頁**：若單頁內容超過 7 點，請主動拆成 (1/2), (2/2) 兩頁。

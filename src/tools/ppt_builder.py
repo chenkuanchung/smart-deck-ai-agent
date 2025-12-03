@@ -9,8 +9,7 @@ LAYOUT_CONFIG = {
     "title": {"id": 0, "title_idx": 0, "body_idx": 1},
     "content": {"id": 1, "title_idx": 0, "body_idx": 1},
     "section": {"id": 2, "title_idx": 0, "body_idx": 1},
-    "two_column": {"id": 3, "title_idx": 0, "left_idx": 1, "right_idx": 2},
-    "comparison": {"id": 4, "title_idx": 0, "left_idx": 2, "right_idx": 4}
+    "two_column": {"id": 3, "title_idx": 0, "left_idx": 1, "right_idx": 2}
 }
 
 def set_font(paragraph, font_name="Microsoft JhengHei", size=None):
@@ -63,20 +62,15 @@ def create_presentation(title, slides_content, template_path="template.pptx", fi
     for page in slides_content:
         layout_key = page.get('layout', 'content')
         
-        # 處理 Comparison 對應到 Two Column 邏輯
-        if layout_key == 'comparison':
-            config = LAYOUT_CONFIG['comparison']
-            # 注意：某些 Template 可能沒有 id=4，這裡做個簡單防呆
-            try:
-                slide_layout = prs.slide_layouts[config['id']]
-            except:
-                slide_layout = prs.slide_layouts[LAYOUT_CONFIG['two_column']['id']]
-        else:
-            config = LAYOUT_CONFIG.get(layout_key, LAYOUT_CONFIG['content'])
-            try:
-                slide_layout = prs.slide_layouts[config['id']]
-            except:
-                slide_layout = prs.slide_layouts[1] # Fallback to content
+        # --- 簡化後的版型選擇邏輯 ---
+        # 直接讀取設定，不再嘗試切換 Comparison
+        config = LAYOUT_CONFIG.get(layout_key, LAYOUT_CONFIG['content'])
+        try:
+            slide_layout = prs.slide_layouts[config['id']]
+        except:
+            # 萬一指定的 ID 找不到 (例如 template 只有 1 張母片)，回退到 ID 1
+            print(f"⚠️ 警告: 版型 ID {config.get('id')} 不存在，使用預設版型。")
+            slide_layout = prs.slide_layouts[1] 
 
         slide = prs.slides.add_slide(slide_layout)
         
@@ -92,7 +86,8 @@ def create_presentation(title, slides_content, template_path="template.pptx", fi
         raw_items = page.get('content', [])
         if not isinstance(raw_items, list): raw_items = []
 
-        if layout_key in ['two_column', 'comparison']:
+        # 僅針對雙欄版型做分流處理
+        if layout_key == 'two_column':
             left_items = []
             right_items = []
             for item in raw_items:
@@ -106,7 +101,7 @@ def create_presentation(title, slides_content, template_path="template.pptx", fi
             try: fill_text_frame(slide.placeholders[config['right_idx']].text_frame, right_items)
             except: pass
         else:
-            # 單欄
+            # 單欄 (Content, Section, Title 等)
             try: fill_text_frame(slide.placeholders[config['body_idx']].text_frame, raw_items)
             except: pass
 
