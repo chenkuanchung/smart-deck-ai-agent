@@ -1,44 +1,70 @@
 # 📊 Smart Deck AI Agent
 
-> Next-Gen Presentation Generator powered by LangGraph & Gemini 2.5
+> **Next-Gen Presentation Generator powered by LangGraph & Gemini 2.5**
+>
+> 結合 **前哨諮詢（Chat）**、**深度規劃（Manager）** 與 **精準執行（Writer）** 的全自動化簡報生成系統。
 
-結合 RAG（內部知識庫）與 Google Search（外部聯網）的智慧簡報生成代理系統。
-
-## 📖 專案簡介 (Introduction)
-
-**Smart Deck AI Agent** 是一個解決「生成式 AI 簡報內容空泛」問題的自動化系統。有別於傳統的單次 Prompt 生成，本專案採用 **LangGraph** 多代理（Multi-Agent）架構，模擬真實世界的專業分工：
-
-* **策略分析師 (Manager)**：負責閱讀文件、上網查證、規劃大綱，並具備「自我反思 (Self-Reflection)」能力，能自動修正邏輯漏洞。
-* **執行製作 (Writer)**：負責資料清洗、格式標準化，並調用 python-pptx 引擎生成最終檔案。
-
-透過 **RAG (Retrieval-Augmented Generation)** 與 **Google Search** 的雙重檢索機制，確保產出的簡報既有內部數據支撐（如財報、PDF），又能結合最新的市場動態。
+**Smart Deck AI Agent** 是一個解決「生成式 AI 簡報內容空泛」問題的專業級解決方案。有別於傳統「一句話生成 PPT」的單向模式，本專案模擬真實世界的專業顧問團隊，由三個不同職能的 AI Agent 協作完成任務。
 
 ---
 
-## ✨ 核心亮點 (Key Features)
+## 🤖 核心架構：三代理協作系統 (The Triple-Agent Architecture)
 
-### 🧠 雙軌檢索機制 (Hybrid Retrieval):
-* **RAG**: 使用 ChromaDB 解析並向量化使用者上傳的 PDF/TXT 文件。
-* **Web Search**: 當內部資料不足時，自動觸發 Google Custom Search 聯網補充最新資訊。
+本系統由三位各司其職的 AI Agent 組成，模擬從「諮詢」到「規劃」再到「製作」的專業流程：
 
-### 🔄 自癒反思迴圈 (Self-Reflection Loop):
-* **Manager Agent** 不僅是規劃者，還具備 Critique 能力。在生成大綱後，會自動檢查「是否有數據缺失？」、「邏輯是否通順？」，若有不足會自動發起二次檢索與修訂。
+### 1. 首席策略分析師 (Lead Strategy Analyst) —— **The Chat Agent** 🌟
+> **"The Consultant"** - 位於 `src/app.py`
+>
+> **這是系統中工具最豐富、反應最靈活的角色。** 它不直接寫 PPT，而是作為使用者的「簡報顧問」。
 
-### 🎯 精準版型控制 (Layout Aware):
-* 利用 Pydantic 定義嚴格的 Structured Output，確保 AI 生成的內容能精準對應到 PPT 的標題頁、雙欄比較、內容頁等版型。
+* **全能工具箱**：它是唯一能同時靈活調度 `read_knowledge_base` (RAG) 與 `Google Search` (Web) 的角色，負責在前期的對話中蒐集資訊。
+* **意圖偵測 (Intent Detection)**：能判斷使用者是想「探索話題」、「驗證數據」還是「比較分析」，並據此決定搜尋策略。
+* **模糊檢查 (Ambiguity Check)**：當指令太籠統（如：「做個 AI 簡報」）時，它會拒絕瞎做，而是反問使用者：「目標受眾是誰？想強調技術還是市場？」
+* **任務**：透過對話將模糊的想法，轉化為具備高資訊密度的素材，為後續的 Manager 鋪路。
 
-### ⚡ 最新模型驅動：
-* **Planning**: 使用邏輯推理強大的 **Gemini 2.5 Pro**。
-* **Response**: 使用速度極快的 **Gemini 2.5 Flash**。
+### 2. 架構規劃師 (Manager Agent) —— **The Brain** 🧠
+> **"The Planner"** - 位於 `src/agents/manager.py` (LangGraph Node)
+>
+> 負責深度思考與邏輯架構，由高智商的 **Gemini 2.5 Pro** 驅動。
+
+* **結構化規劃**：將 Chat Agent 蒐集到的資訊，轉化為嚴謹的 `PresentationOutline` (Pydantic Model)。
+* **自我反思 (Self-Reflection)**：具備 Critique 能力。在產出大綱後，會自動檢查：「數據是否夠新？」、「邏輯是否通順？」。若發現缺漏，會**自主發起二次檢索**來補強內容。
+* **層級控制**：精準定義每個重點的 Level (0-2) 與 Column (左/右欄)。
+
+### 3. 執行製作 (Writer Agent) —— **The Hands** ✍️
+> **"The Builder"** - 位於 `src/agents/workers.py` (LangGraph Node)
+>
+> 負責將規劃好的藍圖，轉化為實際的 `.pptx` 檔案。
+
+* **資料清洗 (Sanitization)**：修復 Markdown 格式錯誤，確保輸出內容符合 PPT 規範。
+* **版型適配 (Layout Adapter)**：根據內容屬性，自動選擇 `title`、`section`、`content` 或 `two_column` 母片版型。
+* **引擎調用**：操作 `python-pptx` 進行最終渲染。
+
+---
+
+## ✨ 關鍵功能 (Key Features)
+
+### 🧠 雙軌檢索機制 (Hybrid Retrieval)
+拒絕幻覺，確保每一頁簡報都有憑有據：
+* **RAG (內部知識)**：使用 ChromaDB 解析使用者上傳的 PDF/TXT (如財報、內部會議記錄)。
+* **Web Search (外部聯網)**：當內部資料不足或過時，Chat Agent 與 Manager 均可觸發 Google Custom Search 抓取最新市場動態。
+
+### 🔄 自癒反思迴圈 (Self-Healing Reflection)
+Manager Agent 不會只生成一次就交差。它會審視自己的草稿，若發現論點缺乏數據支持，會自動執行 **"Refinement Loop"**，重新搜尋並修正大綱。
+
+### 🎯 嚴格結構化輸出 (Strict Structured Output)
+全系統採用 Pydantic 進行資料流控制，確保 AI 不會生成「格式錯誤」或「無法解析」的內容，完美對應 PPT 母片格式。
 
 ---
 
 ## 🛠️ 技術堆疊 (Tech Stack)
 
-* **LLM Orchestration**: LangGraph, LangChain
-* **Models**: Google Gemini 2.5 Pro & Flash
+* **LLM Orchestration**: [LangGraph](https://langchain-ai.github.io/langgraph/), LangChain
+* **Models**:
+    * **Planning**: Google Gemini 2.5 Pro (高推理能力)
+    * **Chat/Response**: Google Gemini 2.5 Flash (高回應速度)
+* **Frontend**: Streamlit (提供 Chat Interface 與 File Uploader)
 * **Vector Database**: ChromaDB (Local Persistence)
-* **Web UI**: Streamlit
 * **PPT Engine**: python-pptx
 * **Tools**: Google Custom Search API, PyPDFLoader
 
@@ -47,15 +73,14 @@
 ## 🚀 快速開始 (Quick Start)
 
 ### 1. 前置需求 (Prerequisites)
-您需要申請以下 Google 服務的金鑰：
+請確保擁有以下 Google 服務金鑰：
+* **Google Gemini API Key**: [AI Studio](https://aistudio.google.com/)
+* **Google Custom Search API**: [Cloud Console](https://console.cloud.google.com/)
+* **Search Engine ID (CSE ID)**: [Programmable Search](https://programmablesearchengine.google.com/)
 
-* **Google Gemini API Key**: [Get API Key](https://aistudio.google.com/)
-* **Google Custom Search API** (用於聯網搜尋): [Console](https://console.cloud.google.com/)
-* **Programmable Search Engine ID (CSE ID)**: [Setup](https://programmablesearchengine.google.com/)
+### 2. 安裝與執行 (Installation)
 
-### 2. 安裝與設定 (Installation)
-
-#### 方法 A：使用 Docker (推薦，環境最乾淨)
+#### 方法 A：使用 Docker (推薦) 🐳
 
 ```bash
 # 1. Clone 專案
@@ -100,23 +125,21 @@ streamlit run src/app.py
 
 ```Plaintext
 smart-deck-ai-agent/
-├── chromadb/               # 向量資料庫儲存目錄 (自動生成)
 ├── src/
+│   ├── app.py              # [UI/Chat] 首席策略分析師 (Streamlit 主程式)
+│   ├── graph.py            # [Flow] LangGraph 定義 Manager -> Writer 流程
 │   ├── agents/
-│   │   ├── manager.py      # [核心] Manager Agent：規劃與反思邏輯
-│   │   ├── workers.py      # [執行] Writer Agent：PPT 生成與清洗
-│   │   └── state.py        # LangGraph State 定義 (Pydantic Models)
+│   │   ├── manager.py      # [Brain] 架構規劃師 (Planning & Reflection)
+│   │   ├── workers.py      # [Hand] 執行製作 (PPT Generation)
+│   │   └── state.py        # [Schema] Pydantic 資料結構定義
 │   ├── tools/
-│   │   ├── rag.py          # RAG 工具 (ChromaDB Ingest & Query)
-│   │   ├── search.py       # Google Search 工具封裝
-│   │   └── ppt_builder.py  # python-pptx 版型對應邏輯
-│   ├── app.py              # Streamlit 前端主程式
-│   ├── config.py           # 設定檔與環境變數讀取
-│   └── graph.py            # Agent Graph 流程圖定義
-├── template.pptx           # PPT 母片 (必須包含 Title/Content/Two-Column 版型)
-├── docker-compose.yml      # Docker 編排檔
-├── Dockerfile              # Docker 映像檔定義
-└── requirements.txt        # Python 依賴清單
+│   │   ├── rag.py          # [Memory] 向量資料庫操作
+│   │   ├── search.py       # [Eyes] Google Search 工具
+│   │   └── ppt_builder.py  # [Engine] python-pptx 封裝
+│   └── config.py           # 環境變數設定
+├── template.pptx           # PPT 母片 (必須包含對應 Layout)
+├── docker-compose.yml
+└── requirements.txt
 ```
 
 ## 📝 使用指南 (User Guide)
@@ -124,15 +147,17 @@ smart-deck-ai-agent/
 1.  **上傳知識庫**：
     * 在左側 Sidebar 上傳 PDF 或 TXT 文件（如產業報告、會議記錄）。
     * 系統會自動進行向量化，成功後顯示 ✅ 已存入知識庫。
+    * Chat Agent 會優先閱讀這些文件。
 
 2.  **對話探索**：
-    * 在對話框輸入您的需求。
+    * 在對話框與 *Chat Agent* 互動。
     * 範例：「請根據上傳文件，分析 2025 年的 AI 趨勢，並補充網路上最新的競爭對手數據。」
-    * Chat Assistant 會結合文件內容與網路搜尋回答您。
+    * Chat Agent 會自動調用 RAG 查文件，並用 Google Search 補足分析師評論。
 
 3.  **生成 PPT**：
     * 點擊左側的 「✨ 生成 PPT」 按鈕。
-    * 觀察 Log：您會看到 Manager 正在規劃架構，甚至觸發 **自我反思 (Self-Reflection)** 來補強數據。
+    * 系統會將對話上下文打包，交給 Manager Agent 進行深度規劃與反思。
+    * 最後由 Writer Agent 產出檔案。
 
 4.  **下載成果**：
     * 待狀態顯示「✅ 完成」後，點擊下載按鈕取得 `.pptx` 檔案。
