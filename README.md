@@ -84,7 +84,7 @@ Manager Agent 不會只生成一次就交差。它會審視自己的草稿，若
 
 ```bash
 # 1. Clone 專案
-git clone [https://github.com/chenkuanchung/smart-deck-ai-agent.git](https://github.com/chenkuanchung/smart-deck-ai-agent.git)
+git clone https://github.com/chenkuanchung/smart-deck-ai-agent.git
 cd smart-deck-ai-agent
 
 # 2. 設定環境變數
@@ -92,8 +92,7 @@ cd smart-deck-ai-agent
 touch .env
 ```
 ```Ini, TOML
-.env 檔案範例：
-
+# .env 檔案範例：
 GOOGLE_API_KEY=your_gemini_api_key
 GOOGLE_SEARCH_API_KEY=your_search_api_key
 GOOGLE_CSE_ID=your_cse_id
