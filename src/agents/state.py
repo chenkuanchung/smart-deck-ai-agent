@@ -11,26 +11,14 @@ VALID_LAYOUTS = [
 ]
 
 class ContentItem(BaseModel):
-    """
-    簡報內容的最小單位。
-    這是 Manager 與 Builder 溝通的「原子」，確保格式不被破壞。
-    """
     text: str = Field(description="重點文字內容")
     level: int = Field(default=0, description="縮排層級 (0-8)。0=主重點, 1=子重點。")
     column: int = Field(default=0, description="欄位編號。0=預設/左欄, 1=右欄 (用於雙欄版型)。")
 
 class Slide(BaseModel):
-    layout: str = Field(
-        description=f"版型 ID。必須是以下之一: {', '.join(VALID_LAYOUTS)}"
-    )
+    layout: str = Field(description=f"版型 ID。必須是以下之一: {', '.join(VALID_LAYOUTS)}")
     title: str = Field(description="投影片標題")
-    
-    # [核心] 使用 ContentItem 列表，而非純文字列表
-    content: List[ContentItem] = Field(
-        default_factory=list,
-        description="投影片內容列表。Manager 需設定好每個項目的 level 與 column。"
-    )
-    
+    content: List[ContentItem] = Field(default_factory=list, description="投影片內容列表")
     notes: str = Field(default="", description="演講者備忘稿 (Speaker Notes)")
 
 class PresentationOutline(BaseModel):
@@ -44,5 +32,9 @@ class AgentState(BaseModel):
     """
     user_request: str
     chat_history: str = ""
+    session_id: str = "default"  # 隔離不同使用者的資料
     outline: Optional[PresentationOutline] = None
     final_file_path: Optional[str] = None
+    
+    # 專門讓後端把錯誤訊息傳給前端的通道
+    error_message: Optional[str] = None

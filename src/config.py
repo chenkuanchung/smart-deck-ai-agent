@@ -12,7 +12,7 @@ class Config:
     # Fast 模型負責 Chat Agent 的快速回應與 Writer 的簡單處理 (使用 Flash)
     MODEL_FAST = "gemini-2.5-flash" 
     
-    MODEL_EMBEDDING = "models/text-embedding-004"
+    MODEL_EMBEDDING = "models/gemini-embedding-001"
     
     # --- 工具設定 ---
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")

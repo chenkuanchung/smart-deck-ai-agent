@@ -11,7 +11,7 @@ google-api-python-client==2.153.0
 python-pptx==1.0.2                
 chromadb==0.5.18                  
 langchain-chroma==0.1.4           
-pypdf==5.1.0                      
+pypdf==5.1.0                    
 
 # UI
 streamlit==1.40.1

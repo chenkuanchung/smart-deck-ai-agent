@@ -1,39 +1,55 @@
 # src/agents/workers.py
+import re
+import traceback
 from src.agents.state import AgentState, ContentItem
 from src.tools.ppt_builder import create_presentation
 
+def clean_markdown_text(text: str) -> str:
+    """清除 LLM 生成的 Markdown 符號，保持 PPT 純文字排版"""
+    if not text: return ""
+    text = str(text)
+    
+    # 1. 移除 Markdown 連結 [文字](網址) -> 只保留文字
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # 2. 移除粗體與斜體 (**text**, __text__, *text*)
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    # 3. 移除 Markdown 標題符號 (# 標題)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    # 4. 移除列表前綴 (- 或 *)，避免與 PPT 內建的 bullet points 衝突
+    text = re.sub(r'^[-*]\s+', '', text, flags=re.MULTILINE)
+    
+    return text.strip()
+
 def writer_node(state: AgentState):
-    """
-    Writer 負責將 Manager 的結構化大綱轉換為 PPT。
-    現在它主要扮演 Adapter 與 Cleaner 的角色，確保傳給 Builder 的資料格式無誤。
-    """
     print("--- [Writer] 收到大綱，準備生成 PPT ---")
     
     outline = state.outline
     if not outline or not outline.slides:
         print("⚠️ Writer: 空大綱，停止生成")
-        return {"final_file_path": None}
+        # ✨ 加入錯誤回報
+        return {"final_file_path": None, "error_message": "Writer 節點收到空大綱，無法生成簡報。"}
 
     final_slides_data = [] 
     
     for i, slide in enumerate(outline.slides):
         print(f"  -> 處理 Slide {i+1}: {slide.title}")
         
-        # --- 資料清洗與標準化 (Sanitization) ---
         cleaned_content = []
         raw_content = slide.content if slide.content else []
         
         for item in raw_content:
             # 處理 ContentItem 物件 (標準情況)
             if isinstance(item, ContentItem):
-                text_clean = item.text.replace("**", "").replace("__", "").strip()
+                text_clean = clean_markdown_text(item.text) # 使用強化版清洗函數
                 cleaned_content.append(ContentItem(
                     text=text_clean, level=item.level, column=item.column
                 ))
             
             # 處理 Dict (若被序列化)
             elif isinstance(item, dict):
-                text_clean = item.get("text", "").replace("**", "").strip()
+                text_clean = clean_markdown_text(item.get("text", ""))
                 cleaned_content.append(ContentItem(
                     text=text_clean, 
                     level=item.get("level", 0), 
@@ -42,31 +58,35 @@ def writer_node(state: AgentState):
                 
             # 處理 Str (Fallback 機制，防止 Manager 偶爾吐出字串)
             elif isinstance(item, str):
+                text_clean = clean_markdown_text(item)
                 cleaned_content.append(ContentItem(
-                    text=item.replace("**", "").strip(), 
+                    text=text_clean, 
                     level=0, column=0
                 ))
 
         slide_data = {
             "layout": slide.layout,
-            "title": slide.title,
-            "content": cleaned_content, # 這是清洗過的物件列表
-            "notes": slide.notes
+            "title": clean_markdown_text(slide.title), # 順便清洗標題
+            "content": cleaned_content,
+            "notes": clean_markdown_text(slide.notes) # 順便清洗備忘稿
         }
         final_slides_data.append(slide_data)
         
-    # --- 呼叫 PPT Builder ---
-    output_filename = "final_presentation.pptx"
+    # 使用動態的 UUID 作為檔名，避免多人同時使用時檔案互相覆蓋
+    output_filename = f"presentation_{state.session_id[:8]}.pptx"
+    
     try:
         ppt_path = create_presentation(
-            title=outline.topic,
+            title=clean_markdown_text(outline.topic),
             slides_content=final_slides_data,
             template_path="template.pptx",
             filename=output_filename
         )
-        return {"final_file_path": ppt_path}
+        # ✨ 成功時清空錯誤訊息
+        return {"final_file_path": ppt_path, "error_message": None}
     except Exception as e:
-        print(f"❌ PPT 生成失敗: {e}")
-        import traceback
+        error_msg = f"PPT 檔案生成失敗：{str(e)}"
+        print(f"❌ {error_msg}")
         traceback.print_exc()
-        return {"final_file_path": None}
+        # ✨ 失敗時將錯誤傳回前端
+        return {"final_file_path": None, "error_message": error_msg}
