@@ -61,8 +61,19 @@ def fill_text_frame(text_frame, content_items):
             p = text_frame.add_paragraph()
             
         p.text = text_val.strip()
-        p.level = min(max(0, level_val), 8)
-        set_font(p, size=Pt(18 + (2 - min(level_val, 2))*4))
+        
+        # 確保 level_val 一定是 int，並且限制在 0-4 之間
+        try:
+            safe_level = int(level_val)
+        except (ValueError, TypeError):
+            safe_level = 0
+            
+        safe_level = min(max(0, safe_level), 4) # 限制最大縮排層級為 4
+        p.level = safe_level
+        
+        # 重新計算字體：level=0(26), level=1(22), level>=2(18)
+        calc_size = 26 - (min(safe_level, 2) * 4)
+        set_font(p, size=Pt(calc_size))
 
 def create_presentation(title, slides_content, template_path="template.pptx", filename="output.pptx"):
     if os.path.exists(template_path):
@@ -86,13 +97,25 @@ def create_presentation(title, slides_content, template_path="template.pptx", fi
 
         slide = prs.slides.add_slide(slide_layout)
         
+        # ✨ 使用安全的方式獲取 Placeholder，避免 KeyError 或 IndexError
+        def safe_get_placeholder(slide, idx):
+            try:
+                # 確保 idx 存在於 slide.placeholders 中
+                if idx in [p.placeholder_format.idx for p in slide.placeholders]:
+                    for p in slide.placeholders:
+                        if p.placeholder_format.idx == idx:
+                            return p
+                # 如果找不到對應的 idx，退而求其次用陣列索引
+                return slide.placeholders[idx]
+            except Exception as e:
+                print(f"⚠️ 警告: 找不到 Placeholder (idx={idx})，忽略此區塊。({e})")
+                return None
+
         # A. 標題
-        try:
-            title_ph = slide.placeholders[config['title_idx']]
-            if title_ph.has_text_frame:
-                title_ph.text = page.get('title', '')
-                set_font(title_ph.text_frame.paragraphs[0], size=Pt(32))
-        except: pass
+        title_ph = safe_get_placeholder(slide, config['title_idx'])
+        if title_ph and title_ph.has_text_frame:
+            title_ph.text = page.get('title', '')
+            set_font(title_ph.text_frame.paragraphs[0], size=Pt(32))
 
         # B. 內容 (雙欄與單欄分流)
         raw_items = page.get('content', [])
@@ -105,13 +128,17 @@ def create_presentation(title, slides_content, template_path="template.pptx", fi
                 if c == 1: right_items.append(item)
                 else: left_items.append(item)
 
-            try: fill_text_frame(slide.placeholders[config['left_idx']].text_frame, left_items)
-            except: pass
-            try: fill_text_frame(slide.placeholders[config['right_idx']].text_frame, right_items)
-            except: pass
+            left_ph = safe_get_placeholder(slide, config.get('left_idx', 1))
+            if left_ph and left_ph.has_text_frame:
+                fill_text_frame(left_ph.text_frame, left_items)
+                
+            right_ph = safe_get_placeholder(slide, config.get('right_idx', 2))
+            if right_ph and right_ph.has_text_frame:
+                fill_text_frame(right_ph.text_frame, right_items)
         else:
-            try: fill_text_frame(slide.placeholders[config['body_idx']].text_frame, raw_items)
-            except: pass
+            body_ph = safe_get_placeholder(slide, config.get('body_idx', 1))
+            if body_ph and body_ph.has_text_frame:
+                fill_text_frame(body_ph.text_frame, raw_items)
 
         # C. 備忘稿
         if page.get('notes') and slide.has_notes_slide:

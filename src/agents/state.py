@@ -1,14 +1,14 @@
 # src/agents/state.py
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Literal
 from pydantic import BaseModel, Field
 
 # --- 核心版型定義 (Layout Constitution) ---
-VALID_LAYOUTS = [
-    "title",       # 封面頁：標題 + 副標題
-    "section",     # 章節頁：僅標題
-    "content",     # 標準頁：標題 + 內容
-    "two_column"   # 雙欄頁：標題 + 左欄 + 右欄
-]
+# VALID_LAYOUTS = [
+#     "title",       # 封面頁：標題 + 副標題
+#     "section",     # 章節頁：僅標題
+#     "content",     # 標準頁：標題 + 內容
+#     "two_column"   # 雙欄頁：標題 + 左欄 + 右欄
+# ]
 
 class ContentItem(BaseModel):
     text: str = Field(description="重點文字內容")
@@ -16,7 +16,9 @@ class ContentItem(BaseModel):
     column: int = Field(default=0, description="欄位編號。0=預設/左欄, 1=右欄 (用於雙欄版型)。")
 
 class Slide(BaseModel):
-    layout: str = Field(description=f"版型 ID。必須是以下之一: {', '.join(VALID_LAYOUTS)}")
+    layout: Literal["title", "section", "content", "two_column"] = Field(
+        description="版型 ID，必須精確符合此四者之一。"
+    )
     title: str = Field(description="投影片標題")
     content: List[ContentItem] = Field(default_factory=list, description="投影片內容列表")
     notes: str = Field(default="", description="演講者備忘稿 (Speaker Notes)")

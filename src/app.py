@@ -71,6 +71,16 @@ thread_config = {"configurable": {"thread_id": st.session_state.session_id}}
 state_snapshot = agent_workflow.get_state(thread_config)
 is_paused = "writer_node" in state_snapshot.next
 
+def get_safe_history(messages, limit=10):
+    if not messages: return []
+    if len(messages) <= limit:
+        start_idx = 0
+        while start_idx < len(messages) and not isinstance(messages[start_idx], HumanMessage): start_idx += 1
+        return messages[start_idx:] if start_idx < len(messages) else []
+    start_idx = len(messages) - limit
+    while start_idx > 0 and not isinstance(messages[start_idx], HumanMessage): start_idx -= 1
+    return messages[start_idx:]
+
 # --- Sidebar UI ---
 with st.sidebar:
     st.title("💬 Smart Deck Agent")
@@ -117,7 +127,9 @@ with st.sidebar:
                 st.warning("⚠️ 請先在右側與 AI 討論，或者在上傳文件後再點擊生成！")
             else:
                 with st.status("🤖 🧠 Manager: 正在分析資料與規劃大綱...", expanded=True) as status:
-                    chat_history_str = "\n".join([f"{type(m).__name__}: {m.content}" for m in st.session_state.messages]) if st.session_state.messages else ""
+                    
+                    safe_outline_msgs = get_safe_history(st.session_state.messages, limit=12) if st.session_state.messages else []
+                    chat_history_str = "\n".join([f"{type(m).__name__}: {m.content}" for m in safe_outline_msgs])
                     
                     rag_context = ""
                     if st.session_state.db_files:
@@ -173,17 +185,6 @@ with st.sidebar:
 @retry(retry=retry_if_exception_type(ResourceExhausted), wait=wait_exponential(multiplier=2, min=2, max=10), stop=stop_after_attempt(3), reraise=True)
 def safe_llm_invoke(llm, messages):
     return llm.invoke(messages)
-
-def get_safe_history(messages, limit=10):
-    if not messages: return []
-    if len(messages) <= limit:
-        start_idx = 0
-        while start_idx < len(messages) and not isinstance(messages[start_idx], HumanMessage): start_idx += 1
-        return messages[start_idx:] if start_idx < len(messages) else messages
-    start_idx = len(messages) - limit
-    while start_idx > 0 and not isinstance(messages[start_idx], HumanMessage): start_idx -= 1
-    return messages[start_idx:]
-
 
 # ==========================================
 # --- 畫面主體切換邏輯 ---
@@ -314,7 +315,7 @@ else:
                             tool_instance = tool_map.get(tc["name"])
                             return tool_instance.invoke(tc["args"]) if tool_instance else "Tool not found"
 
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                             results = list(executor.map(execute_tool, response.tool_calls))
                         
                         for tc, res in zip(response.tool_calls, results):

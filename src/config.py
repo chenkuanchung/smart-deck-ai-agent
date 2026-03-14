@@ -6,12 +6,8 @@ load_dotenv()
 
 class Config:
     # --- 核心模型設定 ---
-    # Smart 模型負責 Manager 的複雜規劃與反思 (建議使用 Pro)
-    MODEL_SMART = "gemini-2.5-pro"
-    
-    # Fast 模型負責 Chat Agent 的快速回應與 Writer 的簡單處理 (使用 Flash)
-    MODEL_FAST = "gemini-2.5-flash" 
-    
+    MODEL_SMART = "gemini-2.5-flash-lite" # rate limit 限制, 先用輕量模型
+    MODEL_FAST = "gemini-2.5-flash-lite" 
     MODEL_EMBEDDING = "models/gemini-embedding-001"
     
     # --- 工具設定 ---
@@ -21,20 +17,18 @@ class Config:
     ENV_MODE = os.getenv("ENV_MODE", "dev")
 
     # --- 檔案路徑設定 ---
-    # 確保上傳與生成的檔案有地方放
     UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
+    OUTPUT_DIR = os.path.join(os.getcwd(), "outputs")
     
     @classmethod
     def validate(cls):
         missing = []
         if not cls.GOOGLE_API_KEY: missing.append("GOOGLE_API_KEY")
-        # 搜尋功能選填，但強烈建議要有
         if not cls.GOOGLE_SEARCH_API_KEY: print("⚠️ Warning: Missing GOOGLE_SEARCH_API_KEY")
         if not cls.GOOGLE_CSE_ID: print("⚠️ Warning: Missing GOOGLE_CSE_ID")
         
-        # 自動建立 uploads 資料夾
-        if not os.path.exists(cls.UPLOAD_DIR):
-            os.makedirs(cls.UPLOAD_DIR)
+        os.makedirs(cls.UPLOAD_DIR, exist_ok=True)
+        os.makedirs(cls.OUTPUT_DIR, exist_ok=True)
             
         if missing:
             raise ValueError(f"缺少必要的環境變數: {', '.join(missing)}")

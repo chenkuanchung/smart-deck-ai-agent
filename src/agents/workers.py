@@ -1,8 +1,10 @@
 # src/agents/workers.py
+import os
 import re
 import traceback
 from src.agents.state import AgentState, ContentItem
 from src.tools.ppt_builder import create_presentation
+from src.config import Config
 
 def clean_markdown_text(text: str) -> str:
     """清除 LLM 生成的 Markdown 符號，保持 PPT 純文字排版"""
@@ -19,6 +21,9 @@ def clean_markdown_text(text: str) -> str:
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
     # 4. 移除列表前綴 (- 或 *)，避免與 PPT 內建的 bullet points 衝突
     text = re.sub(r'^[-*]\s+', '', text, flags=re.MULTILINE)
+    # 5. 過濾行內程式碼與程式碼區塊，徹底消滅殘留的 ` 符號
+    text = re.sub(r'`(.*?)`', r'\1', text)
+    text = re.sub(r'```[\s\S]*?```', '', text)
     
     return text.strip()
 
@@ -72,17 +77,17 @@ def writer_node(state: AgentState):
         }
         final_slides_data.append(slide_data)
         
-    # 使用動態的 UUID 作為檔名，避免多人同時使用時檔案互相覆蓋
+    # ✨ [修改] 將檔名結合 Config.OUTPUT_DIR 變成絕對路徑
     output_filename = f"presentation_{state.session_id[:8]}.pptx"
+    output_filepath = os.path.join(Config.OUTPUT_DIR, output_filename)
     
     try:
         ppt_path = create_presentation(
             title=clean_markdown_text(outline.topic),
             slides_content=final_slides_data,
             template_path="template.pptx",
-            filename=output_filename
+            filename=output_filepath
         )
-        # ✨ 成功時清空錯誤訊息
         return {"final_file_path": ppt_path, "error_message": None}
     except Exception as e:
         error_msg = f"PPT 檔案生成失敗：{str(e)}"
